@@ -1,0 +1,53 @@
+[package]
+name = "kokoro-reader"
+version = "0.1.0"
+description = "Ebook reader with AI-powered text-to-speech using Kokoro-82M"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "kokoro_reader_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ONNX Runtime for Kokoro TTS (placeholder for now - will use kokoros crate when available)
+# ort = { version = "2.0.0-rc.11", features = ["load-dynamic"] }
+# ndarray = "0.16"
+
+# Audio playback
+rodio = { version = "0.19", default-features = false, features = ["wav", "symphonia-wav"] }
+
+# EPUB parsing
+epub = "2"
+
+# Text processing
+regex = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "parking_lot"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# HTTP client for model downloads
+ureq = "3"
+
+# Platform directories for model storage
+dirs = "6"
+
+[features]
+default = []
