@@ -4,159 +4,234 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-primary);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
     z-index: 1000;
 }
 
 .setup-content {
-    max-width: 480px;
+    max-width: 500px;
     padding: var(--spacing-2xl);
     text-align: center;
 }
 
+.setup-logo {
+    margin-bottom: var(--spacing-lg);
+}
+
+.logo-emoji {
+    font-size: 4rem;
+    display: inline-block;
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
 .setup-content h1 {
     font-size: 2.5rem;
-    margin-bottom: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
     color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: -0.02em;
 }
 
 .setup-content .subtitle {
     font-size: 1.125rem;
     color: var(--text-secondary);
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: var(--spacing-2xl);
 }
 
-.check-icon {
-    font-size: 4rem;
-    display: block;
-    margin-bottom: var(--spacing-lg);
-}
-
-.info-card {
+.status-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
+    padding: var(--spacing-xl);
     margin-bottom: var(--spacing-xl);
+    text-align: center;
+}
+
+.status-card.downloading {
     text-align: left;
 }
 
-.info-card h3 {
-    font-size: 1rem;
+.status-card.success {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.status-card.error {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.check-icon, .error-icon {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: var(--spacing-md);
+}
+
+.status-card h2 {
+    font-size: 1.5rem;
     color: var(--text-primary);
     margin-bottom: var(--spacing-sm);
 }
 
-.info-card p {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    line-height: 1.6;
-    margin-bottom: var(--spacing-md);
+.status-card h3 {
+    font-size: 1.125rem;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
 }
 
-.file-list {
-    font-size: 0.75rem;
-    color: var(--text-muted);
+/* Download Progress Styles */
+.download-header {
+    margin-bottom: var(--spacing-lg);
 }
 
-.file-list .label {
-    display: block;
+.download-header h3 {
     margin-bottom: var(--spacing-xs);
 }
 
-.file-list ul {
-    list-style: none;
-    margin: 0;
-    padding-left: var(--spacing-md);
-}
-
-.file-list li {
-    padding: 2px 0;
-}
-
-.file-list li::before {
-    content: '•';
-    margin-right: var(--spacing-xs);
-    color: var(--accent-primary);
-}
-
-.file-list .size {
-    display: block;
-    margin-top: var(--spacing-sm);
-    font-weight: 600;
-    color: var(--accent-secondary);
-}
-
-.btn.large {
-    font-size: 1.125rem;
-    padding: var(--spacing-md) var(--spacing-2xl);
+.download-size {
+    font-size: 0.875rem;
+    color: var(--text-muted);
 }
 
 .download-progress {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    text-align: left;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
 }
 
-.progress-header {
+.progress-file {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
 }
 
 .file-name {
     font-weight: 500;
     color: var(--text-primary);
     font-size: 0.875rem;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.progress-percent {
+.file-progress {
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-muted);
+    margin-left: var(--spacing-md);
+    flex-shrink: 0;
 }
 
 .progress-bar-container {
     height: 8px;
-    background: var(--bg-tertiary);
+    background: var(--bg-primary);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: var(--spacing-sm);
 }
 
-.progress-bar-fill {
+.progress-bar {
     height: 100%;
     background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
     border-radius: 4px;
     transition: width 0.3s ease;
+    min-width: 2%;
 }
 
-.progress-details {
+.progress-info {
     display: flex;
     justify-content: space-between;
     font-size: 0.75rem;
     color: var(--text-muted);
 }
 
-.progress-details .status {
-    text-transform: capitalize;
+.progress-percent {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--accent-primary);
 }
 
-.error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    color: #ef4444;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-md);
+.progress-files {
+    color: var(--text-muted);
 }
 
-.error-message span {
+.download-note {
     font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* Error Styles */
+.error-text {
+    color: #ef4444;
+    font-size: 0.875rem;
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: var(--radius-md);
+    word-break: break-word;
+}
+
+.error-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    justify-content: center;
+    margin-bottom: var(--spacing-md);
+}
+
+.error-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Footer */
+.setup-footer {
+    margin-top: var(--spacing-xl);
+}
+
+.footer-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-default);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto var(--spacing-lg);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Animations */
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(10px);
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0);
+    }
 }

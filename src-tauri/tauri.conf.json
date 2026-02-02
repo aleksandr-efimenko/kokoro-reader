@@ -26,6 +26,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/chatterbox-tts",
+      "binaries/qwen3-tts"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,6 +39,22 @@
     ],
     "resources": [
       "models/*"
-    ]
+    ],
+    "macOS": {
+      "dmg": {
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 },
+        "windowSize": { "width": 660, "height": 400 }
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "textclarifier"
+        ]
+      }
+    }
   }
 }

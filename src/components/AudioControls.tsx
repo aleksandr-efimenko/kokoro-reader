@@ -5,6 +5,7 @@ interface AudioControlsProps {
     isPlaying: boolean;
     isPaused: boolean;
     isLoading: boolean;
+    error?: string | null;
     speed: number;
     voice: string;
     voices: Voice[];
@@ -22,6 +23,7 @@ export function AudioControls({
     isPlaying,
     isPaused,
     isLoading,
+    error,
     speed,
     voice,
     voices,
@@ -35,13 +37,20 @@ export function AudioControls({
     onVoiceChange,
 }: AudioControlsProps) {
     const progress = totalChunks > 0 ? ((currentChunk + 1) / totalChunks) * 100 : 0;
+    const showProgress = totalChunks > 0 && (isLoading || isPlaying || isPaused);
 
     return (
         <div className="audio-controls glass-panel">
-            {/* Progress bar */}
-            {isPlaying && (
-                <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+            {/* Progress (replaces old bar) */}
+            {showProgress && (
+                <div className="tts-progress-row">
+                    <div className="tts-progress-label">
+                        {isLoading ? 'Preparing…' : isPaused ? 'Paused' : 'Reading'}
+                        <span className="tts-progress-meta">
+                            {currentChunk + 1} / {totalChunks}
+                        </span>
+                    </div>
+                    <progress className="tts-progress" max={100} value={progress} />
                 </div>
             )}
 
@@ -51,14 +60,13 @@ export function AudioControls({
                     <button
                         className="btn btn-icon btn-secondary"
                         onClick={onStop}
-                        disabled={!isPlaying && !isPaused}
+                        disabled={!isPlaying && !isPaused && !isLoading}
                         title="Stop"
                     >
                         ⏹️
                     </button>
 
                     <button
-                        className="btn btn-icon large btn-primary play-btn"
                         onClick={isPaused ? onResume : isPlaying ? onPause : onPlay}
                         disabled={isLoading}
                         title={isPaused ? 'Resume' : isPlaying ? 'Pause' : 'Play'}
@@ -143,6 +151,12 @@ export function AudioControls({
                     </div>
                 )}
             </div>
+
+            {error && (
+                <div className="tts-error" role="alert">
+                    {error}
+                </div>
+            )}
         </div>
     );
 }

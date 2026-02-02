@@ -4,6 +4,9 @@ import type { Settings } from '../hooks/useSettings';
 interface SettingsPanelProps {
     settings: Settings;
     onClose: () => void;
+    aiConnected: boolean;
+    onConnectAI: () => void;
+    onDisconnectAI: () => void;
 }
 
 const FONT_OPTIONS = [
@@ -19,10 +22,16 @@ const FONT_OPTIONS = [
 const THEME_OPTIONS = [
     { value: 'dark', label: '🌙 Dark', color: '#0f0f0f' },
     { value: 'light', label: '☀️ Light', color: '#fafafa' },
-    { value: 'sepia', label: '📜 Sepia', color: '#f4ecd8' },
+    { value: 'sepia', label: '📜 Sepia', color: '#f5eed9' },
 ] as const;
 
-export function SettingsPanel({ settings, onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+    settings,
+    onClose,
+    aiConnected,
+    onConnectAI,
+    onDisconnectAI
+}: SettingsPanelProps) {
     return (
         <div className="settings-overlay" onClick={onClose}>
             <div className="settings-panel glass-panel" onClick={(e) => e.stopPropagation()}>
@@ -93,6 +102,55 @@ export function SettingsPanel({ settings, onClose }: SettingsPanelProps) {
                                 A+
                             </button>
                         </div>
+                    </div>
+
+                    {/* Text Clarifier AI */}
+                    <div className="settings-section">
+                        <label className="settings-label">Text Clarifier AI</label>
+                        <div className="ai-settings">
+                            {aiConnected ? (
+                                <div className="ai-status connected">
+                                    <span className="status-indicator">●</span>
+                                    <span>Connected to TextClarifier</span>
+                                    <button className="btn btn-secondary btn-sm" onClick={onDisconnectAI}>
+                                        Disconnect
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="ai-status disconnected">
+                                    <p className="ai-description">
+                                        Connect to get instant AI explanations for selected text.
+                                    </p>
+                                    <button className="btn btn-primary" onClick={onConnectAI}>
+                                        Connect Account
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* TTS Engine Selection */}
+                    <div className="settings-section">
+                        <label className="settings-label">TTS Engine</label>
+                        <div className="theme-options">
+                            <button
+                                className={`theme-btn ${settings.ttsEngine === 'Chatterbox' ? 'active' : ''}`}
+                                onClick={() => settings.setTtsEngine('Chatterbox')}
+                                style={{ '--theme-color': '#4caf50' } as React.CSSProperties}
+                            >
+                                Kokoro (Fast)
+                            </button>
+                            <button
+                                className={`theme-btn ${settings.ttsEngine === 'Qwen3TTS' ? 'active' : ''}`}
+                                onClick={() => settings.setTtsEngine('Qwen3TTS')}
+                                style={{ '--theme-color': '#2196f3' } as React.CSSProperties}
+                            >
+                                Qwen3-TTS (HQ)
+                            </button>
+                        </div>
+                        <p style={{ marginTop: '0.5rem', fontSize: '0.9em', opacity: 0.8 }}>
+                            Qwen3-TTS: Multi-language, 9 voices, streaming support.
+                        </p>
                     </div>
 
                     {/* Preview */}

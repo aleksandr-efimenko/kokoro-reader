@@ -8,6 +8,49 @@
     animation: slideUp 0.3s ease;
 }
 
+.tts-progress-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.tts-progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.tts-progress-meta {
+    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
+}
+
+.tts-progress {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+/* Safari/WebKit progress styling */
+.tts-progress::-webkit-progress-bar {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+}
+
+.tts-progress::-webkit-progress-value {
+    background: linear-gradient(90deg, #7c3aed, #22c55e);
+    border-radius: 999px;
+}
+
+.tts-progress::-moz-progress-bar {
+    background: linear-gradient(90deg, #7c3aed, #22c55e);
+    border-radius: 999px;
+}
+
 @keyframes slideUp {
     from {
         opacity: 0;
@@ -94,4 +137,12 @@
     padding: var(--spacing-xs) var(--spacing-sm);
     background: var(--bg-tertiary);
     border-radius: var(--radius-sm);
+}
+
+.tts-error {
+    margin-top: var(--spacing-sm);
+    font-size: 0.875rem;
+    color: #ff6b6b;
+    text-align: center;
+    max-width: 520px;
 }
