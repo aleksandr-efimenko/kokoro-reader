@@ -95,8 +95,8 @@ export function useTTS() {
                 }));
 
                 // Keep a larger prefetch window for seamless playback
-                // Prefetch 4 chunks ahead to ensure gapless audio
-                enqueueThrough(payload.chunk_index + 4);
+                // Prefetch 7 chunks ahead to ensure gapless audio with MLX TTS
+                enqueueThrough(payload.chunk_index + 7);
             } else if (payload.event === 'chunk_ready' || payload.event === 'chunk_queued') {
                 if (payload.chunk_index === 0) {
                     setState(prev => ({ ...prev, isLoading: false }));
@@ -115,7 +115,7 @@ export function useTTS() {
                 // Also prefetch more when chunks finish to keep the buffer full
                 const currentSession = sessionIdRef.current;
                 if (currentSession) {
-                    enqueueThrough(payload.chunk_index + 5);
+                    enqueueThrough(payload.chunk_index + 8);
                 }
             } else if (payload.event === 'generation_error' || payload.event === 'error') {
                 setState(prev => ({
@@ -141,7 +141,8 @@ export function useTTS() {
         const normalized = normalizeTextForTts(text);
         if (!normalized) return;
 
-        const textChunks = splitIntoChunks(normalized, 240);
+        // Use larger chunks (450 chars) for better voice consistency
+        const textChunks = splitIntoChunks(normalized, 450);
         if (textChunks.length === 0) return;
 
         const sessionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -163,8 +164,8 @@ export function useTTS() {
         try {
             await invoke('tts_start_session', { sessionId });
 
-            // Generate first 3 chunks immediately for faster start and seamless playback
-            enqueueThrough(2);
+            // Generate first 5 chunks immediately for faster start and seamless playback
+            enqueueThrough(4);
         } catch (e) {
             setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
         }
@@ -221,6 +222,16 @@ export function useTTS() {
         setState(prev => ({ ...prev, voice }));
     }, []);
 
+    // Get the text of the current chunk being played
+    const getCurrentChunkText = useCallback((): string | null => {
+        const chunks = chunksRef.current;
+        const idx = state.currentChunkIndex;
+        if (chunks.length > 0 && idx >= 0 && idx < chunks.length) {
+            return chunks[idx];
+        }
+        return null;
+    }, [state.currentChunkIndex]);
+
     return {
         ...state,
         voices,
@@ -230,6 +241,7 @@ export function useTTS() {
         resume,
         setSpeed,
         setVoice,
+        getCurrentChunkText,
     };
 }
 

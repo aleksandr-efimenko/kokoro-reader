@@ -6,10 +6,12 @@ export interface Settings {
     fontSize: number;
     fontFamily: string;
     ttsEngine: 'Chatterbox' | 'Qwen3TTS';
+    ttsWarmup: boolean;
     setTheme: (theme: 'dark' | 'light' | 'sepia') => void;
     setFontSize: (size: number) => void;
     setFontFamily: (family: string) => void;
     setTtsEngine: (engine: 'Chatterbox' | 'Qwen3TTS') => void;
+    setTtsWarmup: (enabled: boolean) => void;
 }
 
 const STORAGE_KEY = 'kokoro-reader-settings';
@@ -21,6 +23,7 @@ interface StoredSettings {
     fontSize: number;
     fontFamily: string;
     ttsEngine: 'Chatterbox' | 'Qwen3TTS';
+    ttsWarmup: boolean;
 }
 
 const defaultSettings: StoredSettings = {
@@ -28,6 +31,7 @@ const defaultSettings: StoredSettings = {
     fontSize: 18,
     fontFamily: 'Georgia',
     ttsEngine: 'Chatterbox',
+    ttsWarmup: false, // Disabled by default as requested
 };
 
 export function useSettings(): Settings {
@@ -35,6 +39,7 @@ export function useSettings(): Settings {
     const [fontSize, setFontSizeState] = useState(defaultSettings.fontSize);
     const [fontFamily, setFontFamilyState] = useState(defaultSettings.fontFamily);
     const [ttsEngine, setTtsEngineState] = useState(defaultSettings.ttsEngine);
+    const [ttsWarmup, setTtsWarmupState] = useState(defaultSettings.ttsWarmup);
 
     // Load settings from localStorage on mount
     useEffect(() => {
@@ -53,6 +58,7 @@ export function useSettings(): Settings {
                     // Sync default
                     invoke('set_tts_engine', { engine: defaultSettings.ttsEngine }).catch(console.error);
                 }
+                if (parsed.ttsWarmup !== undefined) setTtsWarmupState(parsed.ttsWarmup);
             }
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -61,7 +67,7 @@ export function useSettings(): Settings {
 
     const saveSettings = (newSettings: Partial<typeof defaultSettings>) => {
         try {
-            const current = { theme, fontSize, fontFamily, ttsEngine, ...newSettings };
+            const current = { theme, fontSize, fontFamily, ttsEngine, ttsWarmup, ...newSettings };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
         } catch (e) {
             console.error('Failed to save settings:', e);
@@ -89,14 +95,21 @@ export function useSettings(): Settings {
         invoke('set_tts_engine', { engine }).catch(console.error);
     };
 
+    const setTtsWarmup = (enabled: boolean) => {
+        setTtsWarmupState(enabled);
+        saveSettings({ ttsWarmup: enabled });
+    };
+
     return {
         theme,
         fontSize,
         fontFamily,
         ttsEngine,
+        ttsWarmup,
         setTheme,
         setFontSize,
         setFontFamily,
         setTtsEngine,
+        setTtsWarmup,
     };
 }

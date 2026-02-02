@@ -294,6 +294,38 @@ impl ChatterboxTTS {
         Ok(response.device.unwrap_or_else(|| "mps".to_string()))
     }
 
+    /// Warmup the TTS model (optional - primes caches for faster first generation)
+    pub fn warmup(&mut self) -> Result<(), ChatterboxError> {
+        // Only warmup if Qwen3-TTS engine - Chatterbox doesn't need it
+        if self.engine != TTSEngine::Qwen3TTS {
+            println!("[ChatterboxTTS] Warmup skipped - only needed for Qwen3-TTS");
+            return Ok(());
+        }
+
+        if !self.initialized {
+            println!("[ChatterboxTTS] Initializing model before warmup...");
+            self.init_model()?;
+        }
+
+        let cmd = serde_json::json!({
+            "action": "warmup",
+        });
+
+        self.send_command(&cmd)?;
+        let response = self.read_response()?;
+
+        if response.status != "ok" {
+            return Err(ChatterboxError::GenerationError(
+                response
+                    .error
+                    .unwrap_or_else(|| "Warmup failed".to_string()),
+            ));
+        }
+
+        println!("[ChatterboxTTS] Warmup completed successfully");
+        Ok(())
+    }
+
     /// Generate speech from text
     pub fn generate(
         &mut self,
@@ -556,6 +588,13 @@ impl ChatterboxManager {
         if let Ok(mut tts) = self.inner.lock() {
             tts.shutdown();
         }
+    }
+
+    pub fn warmup(&self) -> Result<(), ChatterboxError> {
+        let mut tts = self.inner.lock().map_err(|_| {
+            ChatterboxError::CommunicationError("Failed to acquire lock".to_string())
+        })?;
+        tts.warmup()
     }
 }
 

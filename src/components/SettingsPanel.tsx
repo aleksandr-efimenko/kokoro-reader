@@ -153,6 +153,22 @@ export function SettingsPanel({
                         </p>
                     </div>
 
+                    {/* TTS Warmup on Startup */}
+                    <div className="settings-section">
+                        <label className="settings-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span>TTS Warmup on Startup</span>
+                            <input
+                                type="checkbox"
+                                checked={settings.ttsWarmup}
+                                onChange={(e) => settings.setTtsWarmup(e.target.checked)}
+                                style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                            />
+                        </label>
+                        <p style={{ marginTop: '0.25rem', fontSize: '0.85em', opacity: 0.7 }}>
+                            Pre-generate audio on app launch for faster first playback. Increases startup time by ~5-10s.
+                        </p>
+                    </div>
+
                     {/* Preview */}
                     <div className="settings-section">
                         <label className="settings-label">Preview</label>

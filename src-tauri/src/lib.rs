@@ -77,6 +77,7 @@ pub fn run() {
             commands::get_voices,
             commands::set_tts_engine,
             commands::get_tts_engine,
+            commands::tts_warmup,
             // Model download commands
             commands::check_model_status,
             commands::download_model,

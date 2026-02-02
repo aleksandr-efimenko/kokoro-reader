@@ -1,7 +1,9 @@
 //! Tauri commands for the frontend to interact with the Rust backend
 
 use crate::epub::{Book, Chapter, EpubParser};
-use crate::tts::{AudioPlayer, ChatterboxManager, PlaybackManager, TTSEngine, TtsPlaybackEvent, Voice};
+use crate::tts::{
+    AudioPlayer, ChatterboxManager, PlaybackManager, TTSEngine, TtsPlaybackEvent, Voice,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -347,6 +349,26 @@ pub fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Result<(), 
 pub fn get_tts_engine() -> String {
     // For now, return default. In future, track actual engine state.
     "chatterbox".to_string()
+}
+
+/// Trigger TTS warmup (optional - called when user has enabled warmup in settings)
+#[tauri::command]
+pub async fn tts_warmup(state: State<'_, AppState>) -> Result<bool, String> {
+    println!("[TTS] Warmup requested by frontend...");
+
+    let tts = state.tts.lock().map_err(|e| e.to_string())?;
+
+    // Send warmup command to the TTS process
+    match tts.warmup() {
+        Ok(_) => {
+            println!("[TTS] Warmup completed successfully");
+            Ok(true)
+        }
+        Err(e) => {
+            println!("[TTS] Warmup failed: {}", e);
+            Ok(false) // Return false rather than error - warmup is optional
+        }
+    }
 }
 
 // ============================================================================

@@ -20,11 +20,13 @@ interface EpubReaderProps {
     onGetParagraphTextReady?: (getter: () => string | null) => void;
     onGetAllRemainingTextReady?: (getter: () => string | null) => void;
     onActionsReady?: (actions: ReaderActions) => void;
+    onReadFromParagraph?: () => void;  // Called when user clicks "Read from here" button
     fontSize: number;
     fontFamily: string;
     theme: 'dark' | 'light' | 'sepia';
     isPlaying?: boolean;
     currentChunkIndex?: number;
+    currentChunkText?: string | null;  // Text of current chunk for highlighting
 }
 
 // CSS styles to inject into EPUB content for TTS indicators
@@ -262,13 +264,16 @@ export function EpubReader({
     onGetParagraphTextReady,
     onGetAllRemainingTextReady,
     onActionsReady,
+    onReadFromParagraph,
     fontSize,
     fontFamily,
     theme,
     isPlaying = false,
     currentChunkIndex = 0,
+    currentChunkText,
 }: EpubReaderProps) {
     const [location, setLocation] = useState<string | number>(initialLocation || 0);
+    const [readButtonPos, setReadButtonPos] = useState<{ x: number; y: number } | null>(null);
     const renditionRef = useRef<Rendition | null>(null);
     const tocRef = useRef<NavItem[]>([]);
     const lastBlockIndexRef = useRef<number | null>(null);
@@ -457,7 +462,7 @@ export function EpubReader({
         return null;
     }, []);
 
-    // Update reading highlight when playback state changes or chunk index updates
+    // Update reading highlight when playback state changes or chunk text updates
     useEffect(() => {
         // Clear existing highlights in currently loaded documents
         if (renditionRef.current) {
@@ -480,20 +485,57 @@ export function EpubReader({
 
         if (!isPlaying) return;
 
-        // Find the element to highlight
+        // Try text-based matching first (more accurate)
+        if (currentChunkText && renditionRef.current) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const contents = (renditionRef.current as any).getContents() as unknown as Array<{ document: Document }>;
+
+                // Normalize the chunk text for comparison
+                const normalizedChunk = currentChunkText.replace(/\s+/g, ' ').trim().toLowerCase();
+                // Take first 50 chars for matching (chunks can be long)
+                const searchText = normalizedChunk.substring(0, 50);
+
+                for (const content of contents || []) {
+                    const doc = content.document;
+                    if (!doc) continue;
+
+                    const blocks = Array.from(
+                        doc.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6')
+                    ) as HTMLElement[];
+
+                    for (const block of blocks) {
+                        const blockText = (block.innerText || block.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+                        // Check if this block contains the start of the chunk
+                        if (blockText.includes(searchText)) {
+                            block.classList.add('kokoro-tts-reading');
+                            block.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                                inline: 'nearest'
+                            });
+                            return; // Found it, stop searching
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error with text-based highlighting:', e);
+            }
+        }
+
+        // Fallback: use index-based matching
         const targetEl = findElementForChunk(currentChunkIndex);
 
         if (targetEl) {
             targetEl.classList.add('kokoro-tts-reading');
-
-            // Scroll into view nicely
             targetEl.scrollIntoView({
                 behavior: 'smooth',
                 block: 'center',
                 inline: 'nearest'
             });
         } else {
-            // Fallback: if index is 0, highlight the start block directly (redundancy)
+            // Last fallback: highlight the start block if we're at index 0
             if (currentChunkIndex === 0 && lastBlockDocRef.current) {
                 const startBlock = lastBlockDocRef.current.querySelector('.kokoro-tts-start');
                 if (startBlock) {
@@ -502,7 +544,7 @@ export function EpubReader({
                 }
             }
         }
-    }, [isPlaying, currentChunkIndex, findElementForChunk]);
+    }, [isPlaying, currentChunkIndex, currentChunkText, findElementForChunk]);
 
     // Navigation actions
     const navigateTo = useCallback((href: string) => {
@@ -753,22 +795,46 @@ export function EpubReader({
                 (e) => {
                     const target = e.target as HTMLElement | null;
                     const block = target?.closest?.('p, li, h1, h2, h3, h4, h5, h6') as HTMLElement | null;
-                    if (!block) return;
+                    if (!block) {
+                        // Clicked outside a paragraph, hide the button
+                        setReadButtonPos(null);
+                        return;
+                    }
+
+                    // Store reference for later use regardless of indexing
+                    lastBlockDocRef.current = doc;
+                    lastVisibleDocRef.current = doc;
 
                     const idxStr = block.dataset.kokoroBlockIndex;
                     const idx = idxStr ? parseInt(idxStr, 10) : NaN;
                     if (Number.isFinite(idx)) {
                         lastBlockIndexRef.current = idx;
-                        lastBlockDocRef.current = doc;
-                        lastVisibleDocRef.current = doc;
+                    }
 
-                        // Remove previous start marker from this document
-                        doc.querySelectorAll('.kokoro-tts-start').forEach(el => {
-                            el.classList.remove('kokoro-tts-start');
-                        });
+                    // Remove previous start marker from this document
+                    doc.querySelectorAll('.kokoro-tts-start').forEach(el => {
+                        el.classList.remove('kokoro-tts-start');
+                    });
 
-                        // Add start marker to clicked block
-                        block.classList.add('kokoro-tts-start');
+                    // Add start marker to clicked block
+                    block.classList.add('kokoro-tts-start');
+
+                    // Calculate position for floating "Read from here" button
+                    // Show for ANY paragraph, not just indexed ones
+                    const blockRect = block.getBoundingClientRect();
+                    const iframe = contents.document.defaultView?.frameElement as HTMLIFrameElement;
+                    const iframeRect = iframe?.getBoundingClientRect();
+
+                    if (iframeRect) {
+                        // Position button above the paragraph, to the right
+                        // Using absolute position relative to the window
+                        const x = Math.max(10, iframeRect.left + blockRect.left);
+                        const y = iframeRect.top + blockRect.top - 35; // Above the paragraph
+
+                        // Debug log
+                        console.log('[EpubReader] Read button position:', { x, y, blockRect, iframeRect });
+
+                        setReadButtonPos({ x, y });
                     }
                 },
                 true,
@@ -812,6 +878,18 @@ export function EpubReader({
         onTocLoaded?.(toc);
     }, [onTocLoaded]);
 
+    const handleReadFromHere = useCallback(() => {
+        setReadButtonPos(null);
+        onReadFromParagraph?.();
+    }, [onReadFromParagraph]);
+
+    // Hide button when playback starts
+    useEffect(() => {
+        if (isPlaying) {
+            setReadButtonPos(null);
+        }
+    }, [isPlaying]);
+
     return (
         <div className="epub-reader-container">
             <ReactReader
@@ -829,6 +907,36 @@ export function EpubReader({
                     width: '100%',
                 }}
             />
+            {/* Floating "Read from here" button */}
+            {readButtonPos && !isPlaying && (
+                <button
+                    className="epub-read-from-here-btn"
+                    style={{
+                        position: 'fixed',
+                        left: readButtonPos.x,
+                        top: readButtonPos.y,
+                        zIndex: 1000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+                        transition: 'transform 0.15s ease, opacity 0.15s ease',
+                        background: theme === 'dark' ? '#4ade80' : theme === 'sepia' ? '#854d0e' : '#16a34a',
+                        color: theme === 'dark' ? '#000' : '#fff',
+                    }}
+                    onClick={handleReadFromHere}
+                    title="Read from this paragraph"
+                >
+                    <span>▶</span>
+                    <span>Read</span>
+                </button>
+            )}
         </div>
     );
 }

@@ -58,6 +58,20 @@ function App() {
       });
   }, []);
 
+  // TTS Warmup on app startup when enabled in settings
+  useEffect(() => {
+    if (settings.ttsWarmup) {
+      console.log('[App] TTS warmup enabled, triggering warmup...');
+      invoke<boolean>('tts_warmup')
+        .then((success) => {
+          console.log('[App] TTS warmup completed:', success ? 'success' : 'failed');
+        })
+        .catch((err) => {
+          console.warn('[App] TTS warmup error:', err);
+        });
+    }
+  }, [settings.ttsWarmup]);
+
   // Open a book from file path (can be called from file picker or library)
   const openBook = useCallback(async (filePath: string, savedLocation?: string) => {
     try {
@@ -341,11 +355,13 @@ function App() {
             onGetParagraphTextReady={(getter) => setGetParagraphText(() => getter)}
             onGetAllRemainingTextReady={(getter) => setGetAllRemainingText(() => getter)}
             onActionsReady={setReaderActions}
+            onReadFromParagraph={handlePlay}
             fontSize={settings.fontSize}
             fontFamily={settings.fontFamily}
             theme={settings.theme}
             isPlaying={tts.isPlaying}
             currentChunkIndex={tts.currentChunkIndex}
+            currentChunkText={tts.getCurrentChunkText()}
           />
         ) : (
           <div className="empty-state">
