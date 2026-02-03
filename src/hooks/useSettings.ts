@@ -5,12 +5,12 @@ export interface Settings {
     theme: 'dark' | 'light' | 'sepia';
     fontSize: number;
     fontFamily: string;
-    ttsEngine: 'Echo' | 'Chatterbox' | 'Qwen3TTS';
+    ttsEngine: 'Echo';
     ttsWarmup: boolean;
     setTheme: (theme: 'dark' | 'light' | 'sepia') => void;
     setFontSize: (size: number) => void;
     setFontFamily: (family: string) => void;
-    setTtsEngine: (engine: 'Echo' | 'Chatterbox' | 'Qwen3TTS') => void;
+    setTtsEngine: (engine: 'Echo') => void;
     setTtsWarmup: (enabled: boolean) => void;
 }
 
@@ -22,7 +22,7 @@ interface StoredSettings {
     theme: Theme;
     fontSize: number;
     fontFamily: string;
-    ttsEngine: 'Echo' | 'Chatterbox' | 'Qwen3TTS';
+    ttsEngine: 'Echo';
     ttsWarmup: boolean;
 }
 
@@ -31,7 +31,7 @@ const defaultSettings: StoredSettings = {
     fontSize: 18,
     fontFamily: 'Georgia',
     ttsEngine: 'Echo',
-    ttsWarmup: false,
+    ttsWarmup: true,  // Pre-warm model on app load for faster TTS
 };
 
 export function useSettings(): Settings {
@@ -51,9 +51,11 @@ export function useSettings(): Settings {
                 if (parsed.fontSize) setFontSizeState(parsed.fontSize);
                 if (parsed.fontFamily) setFontFamilyState(parsed.fontFamily);
                 if (parsed.ttsEngine) {
-                    setTtsEngineState(parsed.ttsEngine);
+                    // Legacy engines no longer supported - always use Echo
+                    const engine: 'Echo' = 'Echo';
+                    setTtsEngineState(engine);
                     // Sync with backend
-                    invoke('set_tts_engine', { engine: parsed.ttsEngine }).catch(console.error);
+                    invoke('set_tts_engine', { engine }).catch(console.error);
                 } else {
                     // Sync default
                     invoke('set_tts_engine', { engine: defaultSettings.ttsEngine }).catch(console.error);
@@ -89,7 +91,7 @@ export function useSettings(): Settings {
         saveSettings({ fontFamily: family });
     };
 
-    const setTtsEngine = (engine: 'Echo' | 'Chatterbox' | 'Qwen3TTS') => {
+    const setTtsEngine = (engine: 'Echo') => {
         setTtsEngineState(engine);
         saveSettings({ ttsEngine: engine });
         invoke('set_tts_engine', { engine }).catch(console.error);

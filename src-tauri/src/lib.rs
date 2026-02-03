@@ -13,6 +13,9 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logging for Echo TTS debug output
+    env_logger::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -65,7 +68,7 @@ pub fn run() {
             // commands::speak,
             // Chunked / queued TTS
             commands::tts_start_session,
-            // commands::tts_enqueue_chunk,
+            commands::tts_enqueue_chunk, // Stub for legacy engines
             commands::tts_stream_text,
             commands::tts_stop,
             commands::tts_pause,

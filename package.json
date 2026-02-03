@@ -16,8 +16,8 @@
     "tauri:build:cpu": "tauri build",
     "tauri:dev:cuda": "tauri dev -- --features cuda",
     "tauri:build:cuda": "tauri build -- --features cuda",
-    "tauri:dev:mac": "tauri dev -- --features metal",
-    "tauri:build:mac": "tauri build -- --features metal",
+    "tauri:dev:mac": "CXXFLAGS=\"-I$(xcrun --show-sdk-path)/usr/include/c++/v1\" tauri dev -- --features metal",
+    "tauri:build:mac": "CXXFLAGS=\"-I$(xcrun --show-sdk-path)/usr/include/c++/v1\" tauri build -- --features metal",
     "test": "npx playwright test",
     "test:e2e": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug"

@@ -8,25 +8,35 @@ use rodio::Source;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+/// Minimum samples to buffer before starting playback (~5 seconds at 24kHz).
+/// This prevents stuttering when the generator is slower than playback.
+const MIN_BUFFER_SAMPLES: usize = 120000;
+
+/// Timeout for blocking receive when buffer is low (ms).
+const BUFFER_FILL_TIMEOUT_MS: u64 = 200;
+
 /// A rodio Source that receives f32 audio samples progressively via a channel.
 ///
-/// Yields samples as they arrive from the generator. When the channel is empty
-/// but still open (generator slower than playback), yields silence. When the
-/// channel is closed and all buffered samples are consumed, returns None.
+/// Buffers audio samples before starting playback to prevent stuttering.
+/// When the channel is empty but still open (generator slower than playback),
+/// yields silence. When the channel is closed and all buffered samples are
+/// consumed, returns None.
 pub struct StreamingSource {
     rx: Receiver<Vec<f32>>,
     buffer: VecDeque<f32>,
     sample_rate: u32,
     finished: bool,
+    initial_buffer_filled: bool,
 }
 
 impl StreamingSource {
     pub fn new(rx: Receiver<Vec<f32>>, sample_rate: u32) -> Self {
         Self {
             rx,
-            buffer: VecDeque::with_capacity(48000), // ~2 seconds at 24kHz
+            buffer: VecDeque::with_capacity(MIN_BUFFER_SAMPLES * 2), // Room for ~4 seconds
             sample_rate,
             finished: false,
+            initial_buffer_filled: false,
         }
     }
 
@@ -35,6 +45,44 @@ impl StreamingSource {
         while let Ok(samples) = self.rx.try_recv() {
             self.buffer.extend(samples);
         }
+    }
+
+    /// Block until we have enough samples buffered for smooth playback.
+    fn fill_initial_buffer(&mut self) {
+        eprintln!(
+            "[StreamingSource] Filling initial buffer (target: {} samples)...",
+            MIN_BUFFER_SAMPLES
+        );
+
+        while self.buffer.len() < MIN_BUFFER_SAMPLES {
+            match self
+                .rx
+                .recv_timeout(Duration::from_millis(BUFFER_FILL_TIMEOUT_MS))
+            {
+                Ok(samples) => {
+                    self.buffer.extend(samples);
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    // Keep waiting - generator is slow
+                    continue;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    // Generator finished before buffer is full - use what we have
+                    eprintln!(
+                        "[StreamingSource] Generator finished early, buffer has {} samples",
+                        self.buffer.len()
+                    );
+                    break;
+                }
+            }
+        }
+
+        self.initial_buffer_filled = true;
+        eprintln!(
+            "[StreamingSource] Buffer filled: {} samples ({:.1}s), starting playback",
+            self.buffer.len(),
+            self.buffer.len() as f64 / self.sample_rate as f64
+        );
     }
 }
 
@@ -46,13 +94,20 @@ impl Iterator for StreamingSource {
             return None;
         }
 
+        // Fill initial buffer before yielding any audio
+        if !self.initial_buffer_filled {
+            self.fill_initial_buffer();
+        }
+
         // Try buffer first
         if let Some(sample) = self.buffer.pop_front() {
+            // Opportunistically fill buffer while playing
+            self.try_fill_buffer();
             return Some(sample);
         }
 
-        // Buffer empty -- try to receive more with a short timeout
-        match self.rx.recv_timeout(Duration::from_millis(50)) {
+        // Buffer empty -- try to receive more with a longer timeout
+        match self.rx.recv_timeout(Duration::from_millis(100)) {
             Ok(samples) => {
                 self.buffer.extend(samples);
                 self.buffer.pop_front()

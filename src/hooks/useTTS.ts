@@ -21,7 +21,7 @@ interface TtsPlaybackEvent {
     message?: string | null;
 }
 
-export function useTTS(ttsEngine?: string) {
+export function useTTS() {
     const [state, setState] = useState<TTSState>({
         isPlaying: false,
         isPaused: false,
@@ -37,46 +37,13 @@ export function useTTS(ttsEngine?: string) {
     const [, setChunks] = useState<string[]>([]);
     const sessionIdRef = useRef<string | null>(null);
     const chunksRef = useRef<string[]>([]);
-    const enqueuedUpToRef = useRef<number>(-1);
     const voiceRef = useRef<string>(state.voice);
     const speedRef = useRef<number>(state.speed);
-    const engineRef = useRef<string>(ttsEngine ?? 'Echo');
 
     useEffect(() => {
         voiceRef.current = state.voice;
         speedRef.current = state.speed;
     }, [state.voice, state.speed]);
-
-    useEffect(() => {
-        engineRef.current = ttsEngine ?? 'Echo';
-    }, [ttsEngine]);
-
-    const isEcho = () => engineRef.current === 'Echo';
-
-    const enqueueThrough = useCallback((maxIndex: number) => {
-        const sessionId = sessionIdRef.current;
-        if (!sessionId) return;
-        const list = chunksRef.current;
-        const from = enqueuedUpToRef.current + 1;
-        const to = Math.min(maxIndex, list.length - 1);
-        if (to < from) return;
-
-        for (let i = from; i <= to; i++) {
-            const chunk = list[i];
-            // Fire-and-forget generation.
-            invoke('tts_enqueue_chunk', {
-                sessionId,
-                chunkIndex: i,
-                text: chunk,
-                voice: voiceRef.current,
-                speed: speedRef.current,
-            }).catch((e) => {
-                setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
-            });
-        }
-
-        enqueuedUpToRef.current = to;
-    }, []);
 
     // Load available voices
     useEffect(() => {
@@ -84,10 +51,18 @@ export function useTTS(ttsEngine?: string) {
     }, []);
 
     // Listen for playback events from Rust.
+    // Track current chunk index in a ref so the event listener can access it
+    const currentChunkIndexRef = useRef<number>(0);
+
+    useEffect(() => {
+        currentChunkIndexRef.current = state.currentChunkIndex;
+    }, [state.currentChunkIndex]);
+
+    // Listen for playback events from Rust.
     useEffect(() => {
         let unlisten: (() => void) | null = null;
 
-        listen<TtsPlaybackEvent>('tts-playback-event', (event) => {
+        listen<TtsPlaybackEvent>('tts-playback-event', async (event) => {
             const payload = event.payload;
             const currentSession = sessionIdRef.current;
             if (!currentSession || payload.session_id !== currentSession) return;
@@ -95,39 +70,56 @@ export function useTTS(ttsEngine?: string) {
             if (payload.event === 'chunk_started') {
                 setState(prev => ({
                     ...prev,
-                    isLoading: payload.chunk_index === 0 ? false : prev.isLoading,
+                    isLoading: false,
                     isPlaying: true,
                     isPaused: false,
                     currentChunkIndex: payload.chunk_index,
                 }));
-
-                // For legacy chunked engines, prefetch ahead
-                if (!isEcho()) {
-                    enqueueThrough(payload.chunk_index + 7);
-                }
             } else if (payload.event === 'chunk_ready' || payload.event === 'chunk_queued') {
                 if (payload.chunk_index === 0) {
                     setState(prev => ({ ...prev, isLoading: false }));
                 }
             } else if (payload.event === 'chunk_finished') {
-                setState(prev => {
-                    const isLast = isEcho()
-                        ? true  // Echo streams full text as a single chunk
-                        : prev.totalChunks > 0 && payload.chunk_index >= prev.totalChunks - 1;
-                    return {
-                        ...prev,
-                        isPlaying: isLast ? false : prev.isPlaying,
-                        isPaused: false,
-                        currentChunkIndex: isLast ? 0 : prev.currentChunkIndex,
-                    };
-                });
+                const chunks = chunksRef.current;
+                const currentIdx = currentChunkIndexRef.current;
+                const nextIdx = currentIdx + 1;
 
-                // For legacy engines, prefetch more chunks
-                if (!isEcho()) {
-                    const cs = sessionIdRef.current;
-                    if (cs) {
-                        enqueueThrough(payload.chunk_index + 8);
+                if (nextIdx < chunks.length) {
+                    // More chunks to play - stream the next one
+                    console.log(`[TTS] Chunk ${currentIdx} finished, streaming chunk ${nextIdx}/${chunks.length}`);
+                    setState(prev => ({
+                        ...prev,
+                        currentChunkIndex: nextIdx,
+                        isLoading: true,
+                    }));
+                    currentChunkIndexRef.current = nextIdx;
+
+                    try {
+                        await invoke('tts_stream_text', {
+                            sessionId: currentSession,
+                            text: chunks[nextIdx],
+                            voice: voiceRef.current,
+                            speed: speedRef.current,
+                        });
+                    } catch (e) {
+                        console.error('[TTS] Error streaming next chunk:', e);
+                        setState(prev => ({
+                            ...prev,
+                            isLoading: false,
+                            isPlaying: false,
+                            error: String(e),
+                        }));
                     }
+                } else {
+                    // All chunks finished
+                    console.log(`[TTS] All ${chunks.length} chunks finished`);
+                    setState(prev => ({
+                        ...prev,
+                        isPlaying: false,
+                        isPaused: false,
+                        currentChunkIndex: 0,
+                    }));
+                    currentChunkIndexRef.current = 0;
                 }
             } else if (payload.event === 'generation_error' || payload.event === 'error') {
                 setState(prev => ({
@@ -147,71 +139,50 @@ export function useTTS(ttsEngine?: string) {
         return () => {
             if (unlisten) unlisten();
         };
-    }, [enqueueThrough]);
+    }, []);
 
     const speak = useCallback(async (text: string) => {
         const normalized = normalizeTextForTts(text);
         if (!normalized) return;
 
+        // Split text into chunks that fit within Echo's context window
+        const textChunks = splitTextIntoChunks(normalized);
+        if (textChunks.length === 0) return;
+
+        console.log(`[TTS] Split text into ${textChunks.length} chunks`);
+
         const sessionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
         sessionIdRef.current = sessionId;
 
-        if (isEcho()) {
-            // Echo streaming mode: send full text, no sentence splitting
-            setState(prev => ({
-                ...prev,
-                isLoading: true,
-                error: null,
-                isPlaying: false,
-                isPaused: false,
-                currentChunkIndex: 0,
-                totalChunks: 1, // Single streaming chunk
-            }));
-            setChunks([normalized]);
-            chunksRef.current = [normalized];
-            enqueuedUpToRef.current = -1;
+        setState(prev => ({
+            ...prev,
+            isLoading: true,
+            error: null,
+            isPlaying: false,
+            isPaused: false,
+            currentChunkIndex: 0,
+            totalChunks: textChunks.length,
+        }));
+        setChunks(textChunks);
+        chunksRef.current = textChunks;
 
-            try {
-                await invoke('tts_start_session', { sessionId });
+        try {
+            await invoke('tts_start_session', { sessionId });
 
-                // Stream the full text -- audio starts playing as frames arrive
-                await invoke('tts_stream_text', {
-                    sessionId,
-                    text: normalized,
-                    voice: voiceRef.current,
-                    speed: speedRef.current,
-                });
-            } catch (e) {
-                setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
-            }
-        } else {
-            // Legacy chunked mode: split into sentences
-            const textChunks = splitIntoSentences(normalized);
-            if (textChunks.length === 0) return;
+            // Stream the first chunk -- subsequent chunks triggered by chunk_finished event
+            const firstChunk = textChunks[0];
+            console.log(`[TTS] Streaming chunk 0/${textChunks.length}: "${firstChunk.substring(0, 50)}..."`);
 
-            setState(prev => ({
-                ...prev,
-                isLoading: true,
-                error: null,
-                isPlaying: false,
-                isPaused: false,
-                currentChunkIndex: 0,
-                totalChunks: textChunks.length,
-            }));
-            setChunks(textChunks);
-            chunksRef.current = textChunks;
-            enqueuedUpToRef.current = -1;
-
-            try {
-                await invoke('tts_start_session', { sessionId });
-
-                // Generate first 5 chunks immediately for faster start
-                enqueueThrough(4);
-            } catch (e) {
-                setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
-            }
+            await invoke('tts_stream_text', {
+                sessionId,
+                text: firstChunk,
+                voice: voiceRef.current,
+                speed: speedRef.current,
+            });
+        } catch (e) {
+            setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
         }
-    }, [enqueueThrough]);
+    }, []);
 
     const stop = useCallback(async () => {
         try {
@@ -227,7 +198,6 @@ export function useTTS(ttsEngine?: string) {
             setChunks([]);
             sessionIdRef.current = null;
             chunksRef.current = [];
-            enqueuedUpToRef.current = -1;
         } catch (e) {
             setState(prev => ({ ...prev, error: String(e) }));
         }
@@ -287,14 +257,6 @@ export function useTTS(ttsEngine?: string) {
     };
 }
 
-// Helper to split text into individual sentences (used by legacy engines)
-function splitIntoSentences(text: string): string[] {
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    return sentences
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
-}
-
 function normalizeTextForTts(text: string): string {
     return text
         .replace(/\u00A0/g, ' ')
@@ -302,3 +264,65 @@ function normalizeTextForTts(text: string): string {
         .replace(/\s{2,}/g, ' ')
         .trim();
 }
+
+/**
+ * Split text into smaller chunks that fit within Echo's context window.
+ * Target ~800 chars per chunk (roughly 200-300 tokens) to stay well under 2048 token limit.
+ * Splits at paragraph boundaries first, then sentence boundaries, then word boundaries.
+ */
+function splitTextIntoChunks(text: string, maxChunkLength = 800): string[] {
+    if (!text || text.length <= maxChunkLength) {
+        return text ? [text] : [];
+    }
+
+    const chunks: string[] = [];
+
+    // First split by paragraphs (double newlines or multiple spaces that look like paragraphs)
+    const paragraphs = text.split(/\n\n+|\r\n\r\n+/).filter(p => p.trim());
+
+    for (const paragraph of paragraphs) {
+        if (paragraph.length <= maxChunkLength) {
+            chunks.push(paragraph.trim());
+        } else {
+            // Split long paragraphs by sentences
+            const sentences = paragraph.match(/[^.!?]+[.!?]+\s*/g) || [paragraph];
+            let currentChunk = '';
+
+            for (const sentence of sentences) {
+                const trimmedSentence = sentence.trim();
+                if (!trimmedSentence) continue;
+
+                if (currentChunk.length + trimmedSentence.length + 1 <= maxChunkLength) {
+                    currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+                } else {
+                    if (currentChunk) {
+                        chunks.push(currentChunk);
+                    }
+
+                    // If single sentence is too long, split at word boundaries
+                    if (trimmedSentence.length > maxChunkLength) {
+                        const words = trimmedSentence.split(/\s+/);
+                        currentChunk = '';
+                        for (const word of words) {
+                            if (currentChunk.length + word.length + 1 <= maxChunkLength) {
+                                currentChunk += (currentChunk ? ' ' : '') + word;
+                            } else {
+                                if (currentChunk) chunks.push(currentChunk);
+                                currentChunk = word;
+                            }
+                        }
+                    } else {
+                        currentChunk = trimmedSentence;
+                    }
+                }
+            }
+
+            if (currentChunk) {
+                chunks.push(currentChunk);
+            }
+        }
+    }
+
+    return chunks.filter(c => c.trim());
+}
+

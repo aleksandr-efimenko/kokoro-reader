@@ -191,36 +191,22 @@ pub fn tts_start_session(
     Ok(())
 }
 
-// Python-based tts_enqueue_chunk temporarily disabled
-// /// Enqueue a chunk for generation + playback. Returns immediately.
-// #[tauri::command]
-// pub async fn tts_enqueue_chunk(
-//     session_id: String,
-//     chunk_index: usize,
-//     text: String,
-//     _voice: String, // Chatterbox uses its own voice
-//     speed: f32,
-//     app: tauri::AppHandle,
-//     state: State<'_, AppState>,
-// ) -> Result<(), String> {
-//     if text.trim().is_empty() {
-//         return Ok(());
-//     }
-//
-//     let playback = state.get_or_init_playback(&app)?;
-//     let tts = Arc::clone(&state.tts);
-//     let app_handle = app.clone();
-//
-//     // Clone playback to check session ID inside the thread
-//     let playback_clone = playback.clone();
-//     let session_id_check = session_id.clone();
-//
-//     tauri::async_runtime::spawn(async move {
-//         // ... (full implementation commented out for brevity)
-//     });
-//
-//     Ok(())
-// }
+// Legacy tts_enqueue_chunk - now returns error since only Echo is supported
+/// Enqueue a chunk for generation + playback (legacy - now returns error).
+/// Use tts_stream_text instead for Echo engine.
+#[tauri::command]
+pub async fn tts_enqueue_chunk(
+    _session_id: String,
+    _chunk_index: usize,
+    _text: String,
+    _voice: String,
+    _speed: f32,
+) -> Result<(), String> {
+    Err(
+        "Legacy TTS engines are no longer supported. Please use Echo engine (tts_stream_text)."
+            .to_string(),
+    )
+}
 
 /// Stream full text through Echo-1B TTS engine.
 ///

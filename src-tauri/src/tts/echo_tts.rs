@@ -170,6 +170,10 @@ impl EchoManager {
 
             // Create the stream inside the task -- it borrows echo.generator and text_owned
             {
+                eprintln!(
+                    "[Echo] Creating generate_stream for text of {} chars",
+                    text_owned.len()
+                );
                 let mut stream = echo.generator.generate_stream(
                     &text_owned,
                     speaker,
@@ -179,6 +183,7 @@ impl EchoManager {
                     buffer_size,
                     None,
                 );
+                eprintln!("[Echo] Stream created, starting to poll frames...");
 
                 while let Some(chunk_result) = stream.next().await {
                     match chunk_result {

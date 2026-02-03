@@ -42,7 +42,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
 
   const settings = useSettings();
-  const tts = useTTS(settings.ttsEngine);
+  const tts = useTTS();
   const ai = useAI();
   const library = useLibrary();
 

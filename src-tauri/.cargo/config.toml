@@ -1,0 +1,13 @@
+# Cargo build configuration
+# Fixes C++ compilation issues with esaxx-rs on macOS with newer SDKs
+
+[target.aarch64-apple-darwin]
+rustflags = []
+
+[target.aarch64-apple-darwin.esaxx-rs]
+# Note: The CXXFLAGS workaround is needed for esaxx-rs on macOS with SDK 15.4+
+# This is handled via package.json scripts
+
+[env]
+# Set deployment target for consistent builds
+MACOSX_DEPLOYMENT_TARGET = "14.0"
