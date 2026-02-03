@@ -20,11 +20,22 @@ PYTHON_TTS_DIR = REPO_ROOT / "python-tts"
 BINARIES_DIR = REPO_ROOT / "src-tauri" / "binaries"
 
 # Target architecture
-ARCH = platform.machine()  # arm64 on Apple Silicon
-if ARCH == "arm64":
-    TARGET_TRIPLE = "aarch64-apple-darwin"
+ARCH = platform.machine()
+SYSTEM = platform.system()
+
+if SYSTEM == "Darwin":
+    if ARCH == "arm64":
+        TARGET_TRIPLE = "aarch64-apple-darwin"
+    else:
+        TARGET_TRIPLE = "x86_64-apple-darwin"
+    EXT = ""
+elif SYSTEM == "Windows":
+    TARGET_TRIPLE = "x86_64-pc-windows-msvc"
+    EXT = ".exe"
 else:
-    TARGET_TRIPLE = "x86_64-apple-darwin"
+    # Linux (assuming x64 for now)
+    TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
+    EXT = ""
 
 TARGETS = [
     {
@@ -36,7 +47,8 @@ TARGETS = [
             "mlx_audio.tts.utils", "mlx_audio.tts.models",
             "numpy", "librosa", "soundfile"
         ],
-        "collect_all": ["mlx_audio", "mlx", "numpy"]
+        "collect_all": ["mlx_audio", "mlx", "numpy"],
+        "platforms": ["Darwin"] # Only build on Mac
     },
     {
         "name": "qwen3-tts",
@@ -46,7 +58,18 @@ TARGETS = [
             "torch", "transformers", "soundfile",
             "qwen_tts", "qwen_tts.models", "qwen_tts.tokenizer"
         ],
-        "collect_all": ["torch", "transformers", "qwen_tts"]
+        "collect_all": ["torch", "transformers", "qwen_tts"],
+        "platforms": ["Darwin"] # Only build on Mac
+    },
+    {
+        "name": "qwen3-tts-cuda",
+        "script": "qwen3_tts_cuda.py",
+        "requirements": "requirements-cuda.txt",
+        "hidden_imports": [
+            "torch", "transformers", "soundfile", "scipy", "numpy"
+        ],
+        "collect_all": ["torch", "transformers", "scipy"],
+        "platforms": ["Windows", "Linux"]
     }
 ]
 
@@ -125,16 +148,33 @@ def main():
     # ], check=True)
     
     for target in TARGETS:
+        # Check if target is supported on this platform
+        if "platforms" in target and SYSTEM not in target["platforms"]:
+            print(f"Skipping build for {target['name']} (not supported on {SYSTEM})")
+            # Create dummy file to satisfy Tauri bundler if it doesn't exist
+            # Tauri expects: name-target_triple(.exe)
+            output_name = f"{target['name']}-{TARGET_TRIPLE}{EXT}"
+            output_path = BINARIES_DIR / output_name
+            if not output_path.exists():
+                print(f"Creating dummy binary for {output_name} to satisfy Tauri build...")
+                # Create an empty file or copy a small placeholder
+                # On Windows, strictly, it should be a valid PE if we wanted it to run, 
+                # but for bundling, just a file might be enough? 
+                #Safest is to write a simple text file, but give it .exe extension.
+                with open(output_path, "wb") as f:
+                    f.write(b"Dummy binary for skipped target")
+            continue
+
         # Install target specific requirements
         if "requirements" in target:
             req_file = PYTHON_TTS_DIR / target["requirements"]
-            print(f"Installing dependencies for {target['name']} from {req_file.name}...")
-            # We use --force-reinstall for key packages to ensure we switch versions
-            # But standard install might be enough if we just want to ensure compliance
-            # However, since they conflict, we likely need to at least ensure we upgrade/downgrade
-            subprocess.run([
-                sys.executable, "-m", "pip", "install", "-r",str(req_file)
-            ], check=True)
+            if req_file.exists():
+                print(f"Installing dependencies for {target['name']} from {req_file.name}...")
+                subprocess.run([
+                    sys.executable, "-m", "pip", "install", "-r",str(req_file)
+                ], check=True)
+            else:
+                 print(f"Warning: {req_file} not found, skipping install.")
             
         build_target(target)
 
