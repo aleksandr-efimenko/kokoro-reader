@@ -180,11 +180,33 @@ impl ChatterboxTTS {
             }
         };
 
-        #[cfg(target_arch = "aarch64")]
+        // Define sidecar suffix based on target platform
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         let suffix = "-aarch64-apple-darwin";
-        #[cfg(target_arch = "x86_64")]
+
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         let suffix = "-x86_64-apple-darwin";
-        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        let suffix = "-x86_64-pc-windows-msvc.exe";
+
+        #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+        let suffix = "-aarch64-pc-windows-msvc.exe";
+
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        let suffix = "-x86_64-unknown-linux-gnu";
+
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        let suffix = "-aarch64-unknown-linux-gnu";
+
+        #[cfg(not(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "macos", target_arch = "x86_64"),
+            all(target_os = "windows", target_arch = "x86_64"),
+            all(target_os = "windows", target_arch = "aarch64"),
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "linux", target_arch = "aarch64")
+        )))]
         let suffix = "";
 
         let sidecar_name = format!("{}{}", base_name, suffix);
@@ -252,6 +274,9 @@ impl ChatterboxTTS {
 
         let sidecar_path = self.get_sidecar_path()?;
 
+        eprintln!("[ChatterboxTTS] Final sidecar path: {:?}", sidecar_path);
+        eprintln!("[ChatterboxTTS] Is Python script: {}", sidecar_path.extension().map(|e| e == "py").unwrap_or(false));
+
         // Determine how to run the sidecar
         let child = if sidecar_path.extension().map(|e| e == "py").unwrap_or(false) {
             // Development mode: run with Python
@@ -261,6 +286,7 @@ impl ChatterboxTTS {
                 "python"
             };
 
+            eprintln!("[ChatterboxTTS] Running Python script with: {}", python_cmd);
             Command::new(python_cmd)
                 .arg(&sidecar_path)
                 .stdin(Stdio::piped())
@@ -270,6 +296,7 @@ impl ChatterboxTTS {
                 .map_err(|e| ChatterboxError::SpawnError(e.to_string()))?
         } else {
             // Production mode: run bundled executable
+            eprintln!("[ChatterboxTTS] Running bundled executable directly");
             Command::new(&sidecar_path)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -547,7 +574,7 @@ pub struct ChatterboxManager {
 impl ChatterboxManager {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::Chatterbox)),
+            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::default())),
         }
     }
 

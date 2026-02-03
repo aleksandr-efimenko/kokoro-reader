@@ -17,7 +17,16 @@ pub enum TTSEngine {
 
 impl Default for TTSEngine {
     fn default() -> Self {
-        TTSEngine::Chatterbox
+        // Chatterbox uses MLX which is macOS-only
+        // On Windows/Linux, use Qwen3-TTS with CUDA
+        #[cfg(target_os = "macos")]
+        {
+            TTSEngine::Chatterbox
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            TTSEngine::Qwen3TTS
+        }
     }
 }
 

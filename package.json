@@ -10,6 +10,7 @@
     "vendor:espeak-ng:macos": "bash scripts/vendor-espeak-ng-macos.sh",
     "build:sidecar": "python3 scripts/build_sidecar.py",
     "tauri": "tauri",
+    "tauri:dev": "npm run build:sidecar && tauri dev",
     "tauri:build": "npm run build:sidecar && tauri build",
     "test": "npx playwright test",
     "test:e2e": "npx playwright test --headed",

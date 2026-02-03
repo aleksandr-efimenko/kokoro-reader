@@ -24,7 +24,12 @@ dist-ssr
 *.sw?
 
 build/
-python-tts/
+# python-tts/  <-- removed to track source
 src-tauri/binaries/
 playwright-report/
 test-results/
+bin/
+*.epub
+*.epub.base64
+.claude/
+=4.40.0

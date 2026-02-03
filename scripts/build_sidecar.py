@@ -118,12 +118,13 @@ def build_target(target):
     
     print(f"Running: {' '.join(cmd[:10])}...")
     result = subprocess.run(cmd)
-    
+
     if result.returncode != 0:
         print(f"PyInstaller build failed for {name}!")
         sys.exit(1)
-    
-    output_path = BINARIES_DIR / output_name
+
+    # PyInstaller adds .exe on Windows automatically
+    output_path = BINARIES_DIR / (output_name + EXT)
     if output_path.exists():
         # Make executable
         output_path.chmod(0o755)
