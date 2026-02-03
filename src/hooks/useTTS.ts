@@ -21,7 +21,7 @@ interface TtsPlaybackEvent {
     message?: string | null;
 }
 
-export function useTTS() {
+export function useTTS(ttsEngine?: string) {
     const [state, setState] = useState<TTSState>({
         isPlaying: false,
         isPaused: false,
@@ -40,11 +40,18 @@ export function useTTS() {
     const enqueuedUpToRef = useRef<number>(-1);
     const voiceRef = useRef<string>(state.voice);
     const speedRef = useRef<number>(state.speed);
+    const engineRef = useRef<string>(ttsEngine ?? 'Echo');
 
     useEffect(() => {
         voiceRef.current = state.voice;
         speedRef.current = state.speed;
     }, [state.voice, state.speed]);
+
+    useEffect(() => {
+        engineRef.current = ttsEngine ?? 'Echo';
+    }, [ttsEngine]);
+
+    const isEcho = () => engineRef.current === 'Echo';
 
     const enqueueThrough = useCallback((maxIndex: number) => {
         const sessionId = sessionIdRef.current;
@@ -94,16 +101,19 @@ export function useTTS() {
                     currentChunkIndex: payload.chunk_index,
                 }));
 
-                // Keep a larger prefetch window for seamless playback
-                // Prefetch 7 chunks ahead to ensure gapless audio with MLX TTS
-                enqueueThrough(payload.chunk_index + 7);
+                // For legacy chunked engines, prefetch ahead
+                if (!isEcho()) {
+                    enqueueThrough(payload.chunk_index + 7);
+                }
             } else if (payload.event === 'chunk_ready' || payload.event === 'chunk_queued') {
                 if (payload.chunk_index === 0) {
                     setState(prev => ({ ...prev, isLoading: false }));
                 }
             } else if (payload.event === 'chunk_finished') {
                 setState(prev => {
-                    const isLast = prev.totalChunks > 0 && payload.chunk_index >= prev.totalChunks - 1;
+                    const isLast = isEcho()
+                        ? true  // Echo streams full text as a single chunk
+                        : prev.totalChunks > 0 && payload.chunk_index >= prev.totalChunks - 1;
                     return {
                         ...prev,
                         isPlaying: isLast ? false : prev.isPlaying,
@@ -112,10 +122,12 @@ export function useTTS() {
                     };
                 });
 
-                // Also prefetch more when chunks finish to keep the buffer full
-                const currentSession = sessionIdRef.current;
-                if (currentSession) {
-                    enqueueThrough(payload.chunk_index + 8);
+                // For legacy engines, prefetch more chunks
+                if (!isEcho()) {
+                    const cs = sessionIdRef.current;
+                    if (cs) {
+                        enqueueThrough(payload.chunk_index + 8);
+                    }
                 }
             } else if (payload.event === 'generation_error' || payload.event === 'error') {
                 setState(prev => ({
@@ -141,33 +153,63 @@ export function useTTS() {
         const normalized = normalizeTextForTts(text);
         if (!normalized) return;
 
-        // Split into individual sentences for fine-grained playback
-        const textChunks = splitIntoSentences(normalized);
-        if (textChunks.length === 0) return;
-
         const sessionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
         sessionIdRef.current = sessionId;
 
-        setState(prev => ({
-            ...prev,
-            isLoading: true,
-            error: null,
-            isPlaying: false,
-            isPaused: false,
-            currentChunkIndex: 0,
-            totalChunks: textChunks.length,
-        }));
-        setChunks(textChunks);
-        chunksRef.current = textChunks;
-        enqueuedUpToRef.current = -1;
+        if (isEcho()) {
+            // Echo streaming mode: send full text, no sentence splitting
+            setState(prev => ({
+                ...prev,
+                isLoading: true,
+                error: null,
+                isPlaying: false,
+                isPaused: false,
+                currentChunkIndex: 0,
+                totalChunks: 1, // Single streaming chunk
+            }));
+            setChunks([normalized]);
+            chunksRef.current = [normalized];
+            enqueuedUpToRef.current = -1;
 
-        try {
-            await invoke('tts_start_session', { sessionId });
+            try {
+                await invoke('tts_start_session', { sessionId });
 
-            // Generate first 5 chunks immediately for faster start and seamless playback
-            enqueueThrough(4);
-        } catch (e) {
-            setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
+                // Stream the full text -- audio starts playing as frames arrive
+                await invoke('tts_stream_text', {
+                    sessionId,
+                    text: normalized,
+                    voice: voiceRef.current,
+                    speed: speedRef.current,
+                });
+            } catch (e) {
+                setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
+            }
+        } else {
+            // Legacy chunked mode: split into sentences
+            const textChunks = splitIntoSentences(normalized);
+            if (textChunks.length === 0) return;
+
+            setState(prev => ({
+                ...prev,
+                isLoading: true,
+                error: null,
+                isPlaying: false,
+                isPaused: false,
+                currentChunkIndex: 0,
+                totalChunks: textChunks.length,
+            }));
+            setChunks(textChunks);
+            chunksRef.current = textChunks;
+            enqueuedUpToRef.current = -1;
+
+            try {
+                await invoke('tts_start_session', { sessionId });
+
+                // Generate first 5 chunks immediately for faster start
+                enqueueThrough(4);
+            } catch (e) {
+                setState(prev => ({ ...prev, isLoading: false, error: String(e) }));
+            }
         }
     }, [enqueueThrough]);
 
@@ -245,9 +287,8 @@ export function useTTS() {
     };
 }
 
-// Helper to split text into individual sentences
+// Helper to split text into individual sentences (used by legacy engines)
 function splitIntoSentences(text: string): string[] {
-    // Split on sentence boundaries, keeping the punctuation with the sentence
     const sentences = text.split(/(?<=[.!?])\s+/);
     return sentences
         .map(s => s.trim())

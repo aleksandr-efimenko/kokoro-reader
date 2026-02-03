@@ -41,8 +41,8 @@ function App() {
   const [selection, setSelection] = useState<{ text: string; context: string; rect: DOMRect | null } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const tts = useTTS();
   const settings = useSettings();
+  const tts = useTTS(settings.ttsEngine);
   const ai = useAI();
   const library = useLibrary();
 

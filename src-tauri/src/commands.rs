@@ -2,7 +2,8 @@
 
 use crate::epub::{Book, Chapter, EpubParser};
 use crate::tts::{
-    AudioPlayer, ChatterboxManager, PlaybackManager, TTSEngine, TtsPlaybackEvent, Voice,
+    AudioPlayer, ChatterboxManager, EchoManager, PlaybackManager, TTSEngine, TtsPlaybackEvent,
+    Voice,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -11,7 +12,12 @@ use tauri::{Emitter, State};
 
 /// Application state
 pub struct AppState {
+    /// Echo-1B native Rust TTS engine (primary)
+    pub echo: Arc<EchoManager>,
+    /// Legacy Python sidecar TTS engine (fallback)
     pub tts: Arc<Mutex<ChatterboxManager>>,
+    /// Currently active TTS engine
+    pub current_engine: Arc<Mutex<TTSEngine>>,
     pub audio_speed: Arc<Mutex<f32>>,
     pub current_book: Arc<Mutex<Option<Book>>>,
     pub playback: Arc<Mutex<Option<PlaybackManager>>>,
@@ -20,7 +26,9 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
+            echo: Arc::new(EchoManager::new()),
             tts: Arc::new(Mutex::new(ChatterboxManager::new())),
+            current_engine: Arc::new(Mutex::new(TTSEngine::default())),
             audio_speed: Arc::new(Mutex::new(1.0)),
             current_book: Arc::new(Mutex::new(None)),
             playback: Arc::new(Mutex::new(None)),
@@ -33,6 +41,13 @@ impl AppState {
             *playback = Some(PlaybackManager::new(app.clone()));
         }
         Ok(playback.as_ref().unwrap().clone())
+    }
+
+    fn get_engine(&self) -> Result<TTSEngine, String> {
+        self.current_engine
+            .lock()
+            .map(|e| *e)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -292,6 +307,90 @@ pub async fn tts_enqueue_chunk(
     Ok(())
 }
 
+/// Stream full text through Echo-1B TTS engine.
+///
+/// Unlike `tts_enqueue_chunk`, this sends the entire text to the model in one call
+/// and streams audio frames directly to playback as they're generated.
+/// No sentence splitting needed -- the model handles the full text.
+#[tauri::command]
+pub async fn tts_stream_text(
+    session_id: String,
+    text: String,
+    _voice: String,
+    speed: f32,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Ok(());
+    }
+
+    let playback = state.get_or_init_playback(&app)?;
+    let echo = Arc::clone(&state.echo);
+    let app_handle = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        // Session check
+        if let Ok(current) = playback.current_session_id.lock() {
+            if current.as_ref() != Some(&session_id) {
+                return;
+            }
+        }
+
+        // Initialize Echo if needed (downloads model on first call)
+        if !echo.is_initialized() {
+            println!("[Echo] Initializing model...");
+            if let Err(e) = echo.initialize().await {
+                eprintln!("[Echo] Init error: {}", e);
+                let _ = app_handle.emit(
+                    "tts-playback-event",
+                    TtsPlaybackEvent {
+                        session_id: session_id.clone(),
+                        chunk_index: 0,
+                        event: "generation_error".to_string(),
+                        message: Some(format!("Echo init failed: {}", e)),
+                    },
+                );
+                return;
+            }
+        }
+
+        // Session check again after potentially long init/model download
+        if let Ok(current) = playback.current_session_id.lock() {
+            if current.as_ref() != Some(&session_id) {
+                println!("[Echo] Session cancelled during init");
+                return;
+            }
+        }
+
+        // Generate streaming audio -- returns immediately with a StreamingSource
+        match echo.generate_streaming(&text, 0, 0.7, speed).await {
+            Ok(source) => {
+                // Enqueue as chunk_index=0 (single streaming source for full text)
+                playback.enqueue_streaming(session_id.clone(), 0, source, speed);
+                println!(
+                    "[Echo] Streaming source enqueued for session {}",
+                    &session_id[..8.min(session_id.len())]
+                );
+            }
+            Err(e) => {
+                eprintln!("[Echo] Generation error: {}", e);
+                let _ = app_handle.emit(
+                    "tts-playback-event",
+                    TtsPlaybackEvent {
+                        session_id: session_id.clone(),
+                        chunk_index: 0,
+                        event: "generation_error".to_string(),
+                        message: Some(format!("Echo generation failed: {}", e)),
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(())
+}
+
 /// Stop current playback and clear the queue.
 #[tauri::command]
 pub fn tts_stop(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
@@ -365,24 +464,43 @@ pub fn is_paused(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<bo
 
 /// Get available TTS voices
 #[tauri::command]
-pub fn get_voices() -> Vec<Voice> {
-    // Chatterbox uses a single voice
-    Voice::get_voices()
+pub fn get_voices(state: State<'_, AppState>) -> Vec<Voice> {
+    let engine = state.get_engine().unwrap_or_default();
+    Voice::get_voices(engine)
 }
 
-/// Set the TTS engine (Chatterbox or Qwen3-TTS)
+/// Set the TTS engine
 #[tauri::command]
-pub fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Result<(), String> {
     let tts_engine = match engine.to_lowercase().as_str() {
+        "echo" | "echo-1b" | "echo1b" => TTSEngine::Echo,
         "qwen3" | "qwen3tts" | "qwen3-tts" | "qwen" => TTSEngine::Qwen3TTS,
-        "chatterbox" | _ => TTSEngine::Chatterbox,
+        "chatterbox" => TTSEngine::Chatterbox,
+        _ => TTSEngine::Echo,
     };
 
-    let tts = state.tts.lock().map_err(|e| e.to_string())?;
+    let current = state.get_engine()?;
+    if current == tts_engine {
+        return Ok(());
+    }
 
-    // Shutdown current engine and switch
-    tts.set_engine(tts_engine)
-        .map_err(|e| format!("Failed to set TTS engine: {}", e))?;
+    // Shutdown the old engine
+    match current {
+        TTSEngine::Echo => {
+            state.echo.shutdown().await;
+        }
+        TTSEngine::Chatterbox | TTSEngine::Qwen3TTS => {
+            if let Ok(tts) = state.tts.lock() {
+                let _ = tts.shutdown();
+            }
+        }
+    }
+
+    // Update current engine
+    {
+        let mut eng = state.current_engine.lock().map_err(|e| e.to_string())?;
+        *eng = tts_engine;
+    }
 
     println!("[TTS] Switched to engine: {:?}", tts_engine);
     Ok(())
@@ -390,9 +508,12 @@ pub fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Result<(), 
 
 /// Get the current TTS engine
 #[tauri::command]
-pub fn get_tts_engine() -> String {
-    // For now, return default. In future, track actual engine state.
-    "chatterbox".to_string()
+pub fn get_tts_engine(state: State<'_, AppState>) -> String {
+    match state.get_engine().unwrap_or_default() {
+        TTSEngine::Echo => "Echo".to_string(),
+        TTSEngine::Chatterbox => "Chatterbox".to_string(),
+        TTSEngine::Qwen3TTS => "Qwen3TTS".to_string(),
+    }
 }
 
 /// Trigger TTS warmup (optional - called when user has enabled warmup in settings)
@@ -400,17 +521,35 @@ pub fn get_tts_engine() -> String {
 pub async fn tts_warmup(state: State<'_, AppState>) -> Result<bool, String> {
     println!("[TTS] Warmup requested by frontend...");
 
-    let tts = state.tts.lock().map_err(|e| e.to_string())?;
+    let engine = state.get_engine()?;
 
-    // Send warmup command to the TTS process
-    match tts.warmup() {
-        Ok(_) => {
-            println!("[TTS] Warmup completed successfully");
-            Ok(true)
+    match engine {
+        TTSEngine::Echo => {
+            // Initialize the Echo model (downloads on first use)
+            match state.echo.initialize().await {
+                Ok(_) => {
+                    println!("[Echo] Warmup: model initialized");
+                    Ok(true)
+                }
+                Err(e) => {
+                    println!("[Echo] Warmup failed: {}", e);
+                    Ok(false)
+                }
+            }
         }
-        Err(e) => {
-            println!("[TTS] Warmup failed: {}", e);
-            Ok(false) // Return false rather than error - warmup is optional
+        _ => {
+            // Legacy: send warmup command to Python sidecar
+            let tts = state.tts.lock().map_err(|e| e.to_string())?;
+            match tts.warmup() {
+                Ok(_) => {
+                    println!("[TTS] Warmup completed successfully");
+                    Ok(true)
+                }
+                Err(e) => {
+                    println!("[TTS] Warmup failed: {}", e);
+                    Ok(false)
+                }
+            }
         }
     }
 }
@@ -441,17 +580,41 @@ pub struct DownloadProgress {
 }
 
 /// Check if models are downloaded and ready
-/// For Chatterbox, model is downloaded on first use by mlx-audio
 #[tauri::command]
-pub fn check_model_status() -> ModelStatus {
-    // Chatterbox downloads models to HuggingFace cache on first use
-    // For now, always report ready since mlx-audio handles this
-    ModelStatus {
-        is_ready: true, // Chatterbox auto-downloads on first use
-        is_downloading: false,
-        missing_files: vec![],
-        download_size_bytes: 0,
-        model_dir: "~/.cache/huggingface".to_string(),
+pub fn check_model_status(state: State<'_, AppState>) -> ModelStatus {
+    let engine = state.get_engine().unwrap_or_default();
+
+    match engine {
+        TTSEngine::Echo => {
+            // Check if sesame/csm-1b model exists in HuggingFace cache
+            let cache_dir = dirs::home_dir()
+                .map(|p| p.join(".cache").join("huggingface").join("hub").join("models--sesame--csm-1b"))
+                .unwrap_or_default();
+
+            let is_ready = cache_dir.exists();
+
+            ModelStatus {
+                is_ready,
+                is_downloading: false,
+                missing_files: if is_ready {
+                    vec![]
+                } else {
+                    vec!["sesame/csm-1b".to_string()]
+                },
+                download_size_bytes: if is_ready { 0 } else { 4_000_000_000 },
+                model_dir: cache_dir.to_string_lossy().to_string(),
+            }
+        }
+        _ => {
+            // Legacy engines auto-download
+            ModelStatus {
+                is_ready: true,
+                is_downloading: false,
+                missing_files: vec![],
+                download_size_bytes: 0,
+                model_dir: "~/.cache/huggingface".to_string(),
+            }
+        }
     }
 }
 

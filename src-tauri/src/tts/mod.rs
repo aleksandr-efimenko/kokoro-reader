@@ -2,31 +2,30 @@
 
 mod audio;
 mod chatterbox;
+pub mod echo_tts;
 mod playback;
+pub mod streaming_source;
 
 pub use audio::AudioPlayer;
 pub use chatterbox::{ChatterboxManager, ChatterboxError};
+pub use echo_tts::{EchoManager, EchoError};
 pub use playback::{PlaybackManager, TtsPlaybackEvent};
+pub use streaming_source::StreamingSource;
 
 /// Available TTS engines
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TTSEngine {
+    /// Echo-1B: Native Rust, streaming, GPU accelerated (default)
+    Echo,
+    /// Chatterbox: Python sidecar, macOS MLX (legacy)
     Chatterbox,
+    /// Qwen3-TTS: Python sidecar, CUDA (legacy)
     Qwen3TTS,
 }
 
 impl Default for TTSEngine {
     fn default() -> Self {
-        // Chatterbox uses MLX which is macOS-only
-        // On Windows/Linux, use Qwen3-TTS with CUDA
-        #[cfg(target_os = "macos")]
-        {
-            TTSEngine::Chatterbox
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            TTSEngine::Qwen3TTS
-        }
+        TTSEngine::Echo
     }
 }
 
@@ -39,17 +38,35 @@ pub struct Voice {
 }
 
 impl Voice {
-    /// Get default Chatterbox voice
+    /// Get default voice
     pub fn default_voice() -> Self {
         Self {
-            id: "default".to_string(),
-            name: "Chatterbox".to_string(),
+            id: "0".to_string(),
+            name: "Echo Default".to_string(),
             language: "en".to_string(),
         }
     }
 
-    /// Get available voices (Chatterbox currently has one voice)
-    pub fn get_voices() -> Vec<Voice> {
-        vec![Self::default_voice()]
+    /// Get available voices for the current engine
+    pub fn get_voices(engine: TTSEngine) -> Vec<Voice> {
+        match engine {
+            TTSEngine::Echo => vec![
+                Self {
+                    id: "0".to_string(),
+                    name: "Echo Default".to_string(),
+                    language: "en".to_string(),
+                },
+            ],
+            TTSEngine::Chatterbox => vec![Self {
+                id: "default".to_string(),
+                name: "Chatterbox".to_string(),
+                language: "en".to_string(),
+            }],
+            TTSEngine::Qwen3TTS => vec![Self {
+                id: "default".to_string(),
+                name: "Qwen3 Default".to_string(),
+                language: "en".to_string(),
+            }],
+        }
     }
 }

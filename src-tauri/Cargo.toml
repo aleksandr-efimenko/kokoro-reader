@@ -34,7 +34,7 @@ epub = "2"
 regex = "1"
 
 # Async runtime
-tokio = { version = "1", features = ["sync", "parking_lot"] }
+tokio = { version = "1", features = ["sync", "parking_lot", "rt-multi-thread"] }
 
 # Error handling
 thiserror = "1"
@@ -48,5 +48,32 @@ dirs = "6"
 reqwest = { version = "0.13.1", features = ["json"] }
 urlencoding = "2"
 
+# Echo-1B native TTS (Sesame CSM-1B via Candle)
+echo = { git = "https://gitlab.com/maxmcneal/echo-1b.git", branch = "main", default-features = false }
+
+# Candle ML framework (needed for device selection and tensor ops in echo_tts)
+candle-core = { git = "https://github.com/huggingface/candle.git" }
+
+# Streaming audio pipeline
+crossbeam-channel = "0.5"
+futures-util = "0.3"
+
 [features]
 default = []
+cuda = ["echo/cuda", "candle-core/cuda"]
+cudnn = ["echo/cudnn"]
+metal = ["echo/metal", "candle-core/metal"]
+accelerate = ["echo/accelerate"]
+mkl = ["echo/mkl", "candle-core/mkl"]
+
+# Override echo-1b's local path dependency on moshi with the git source
+[patch.'https://gitlab.com/maxmcneal/echo-1b.git']
+moshi = { git = "https://github.com/kyutai-labs/moshi.git", branch = "main" }
+
+# Ensure moshi and echo use the same candle version (git, not crates.io)
+[patch.crates-io]
+candle-core = { git = "https://github.com/huggingface/candle.git" }
+candle-nn = { git = "https://github.com/huggingface/candle.git" }
+candle-transformers = { git = "https://github.com/huggingface/candle.git" }
+candle-kernels = { git = "https://github.com/huggingface/candle.git" }
+candle-metal-kernels = { git = "https://github.com/huggingface/candle.git" }

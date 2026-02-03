@@ -125,6 +125,11 @@ impl ChatterboxTTS {
                         "qwen3_tts_cuda.py"
                     }
                 }
+                TTSEngine::Echo => {
+                    return Err(ChatterboxError::SidecarNotFound(
+                        "Echo engine does not use a sidecar".to_string(),
+                    ))
+                }
             };
 
             let mut possible_paths = vec![
@@ -168,6 +173,11 @@ impl ChatterboxTTS {
         // Define sidecar name based on architecture and engine
         let base_name = match self.engine {
             TTSEngine::Chatterbox => "chatterbox-tts",
+            TTSEngine::Echo => {
+                return Err(ChatterboxError::SidecarNotFound(
+                    "Echo engine does not use a sidecar".to_string(),
+                ))
+            }
             TTSEngine::Qwen3TTS => {
                 #[cfg(target_os = "macos")]
                 {
@@ -556,7 +566,8 @@ impl ChatterboxTTS {
 
 impl Default for ChatterboxTTS {
     fn default() -> Self {
-        Self::new(TTSEngine::default())
+        // ChatterboxTTS is a Python sidecar -- default to Chatterbox engine, not Echo
+        Self::new(TTSEngine::Chatterbox)
     }
 }
 
@@ -574,7 +585,7 @@ pub struct ChatterboxManager {
 impl ChatterboxManager {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::default())),
+            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::Chatterbox)),
         }
     }
 

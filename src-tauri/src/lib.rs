@@ -65,6 +65,7 @@ pub fn run() {
             // Chunked / queued TTS
             commands::tts_start_session,
             commands::tts_enqueue_chunk,
+            commands::tts_stream_text,
             commands::tts_stop,
             commands::tts_pause,
             commands::tts_resume,

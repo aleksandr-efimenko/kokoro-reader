@@ -134,22 +134,29 @@ export function SettingsPanel({
                         <label className="settings-label">TTS Engine</label>
                         <div className="theme-options">
                             <button
+                                className={`theme-btn ${settings.ttsEngine === 'Echo' ? 'active' : ''}`}
+                                onClick={() => settings.setTtsEngine('Echo')}
+                                style={{ '--theme-color': '#ff6b35' } as React.CSSProperties}
+                            >
+                                Echo-1B
+                            </button>
+                            <button
                                 className={`theme-btn ${settings.ttsEngine === 'Chatterbox' ? 'active' : ''}`}
                                 onClick={() => settings.setTtsEngine('Chatterbox')}
                                 style={{ '--theme-color': '#4caf50' } as React.CSSProperties}
                             >
-                                Kokoro (Fast)
+                                Chatterbox
                             </button>
                             <button
                                 className={`theme-btn ${settings.ttsEngine === 'Qwen3TTS' ? 'active' : ''}`}
                                 onClick={() => settings.setTtsEngine('Qwen3TTS')}
                                 style={{ '--theme-color': '#2196f3' } as React.CSSProperties}
                             >
-                                Qwen3-TTS (HQ)
+                                Qwen3-TTS
                             </button>
                         </div>
                         <p style={{ marginTop: '0.5rem', fontSize: '0.9em', opacity: 0.8 }}>
-                            Qwen3-TTS: Multi-language, 9 voices, streaming support.
+                            Echo-1B: Native Rust, streaming audio, GPU accelerated. No Python required.
                         </p>
                     </div>
 

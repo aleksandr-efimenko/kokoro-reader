@@ -5,12 +5,12 @@ export interface Settings {
     theme: 'dark' | 'light' | 'sepia';
     fontSize: number;
     fontFamily: string;
-    ttsEngine: 'Chatterbox' | 'Qwen3TTS';
+    ttsEngine: 'Echo' | 'Chatterbox' | 'Qwen3TTS';
     ttsWarmup: boolean;
     setTheme: (theme: 'dark' | 'light' | 'sepia') => void;
     setFontSize: (size: number) => void;
     setFontFamily: (family: string) => void;
-    setTtsEngine: (engine: 'Chatterbox' | 'Qwen3TTS') => void;
+    setTtsEngine: (engine: 'Echo' | 'Chatterbox' | 'Qwen3TTS') => void;
     setTtsWarmup: (enabled: boolean) => void;
 }
 
@@ -22,7 +22,7 @@ interface StoredSettings {
     theme: Theme;
     fontSize: number;
     fontFamily: string;
-    ttsEngine: 'Chatterbox' | 'Qwen3TTS';
+    ttsEngine: 'Echo' | 'Chatterbox' | 'Qwen3TTS';
     ttsWarmup: boolean;
 }
 
@@ -30,8 +30,8 @@ const defaultSettings: StoredSettings = {
     theme: 'dark',
     fontSize: 18,
     fontFamily: 'Georgia',
-    ttsEngine: 'Chatterbox',
-    ttsWarmup: false, // Disabled by default as requested
+    ttsEngine: 'Echo',
+    ttsWarmup: false,
 };
 
 export function useSettings(): Settings {
@@ -89,7 +89,7 @@ export function useSettings(): Settings {
         saveSettings({ fontFamily: family });
     };
 
-    const setTtsEngine = (engine: 'Chatterbox' | 'Qwen3TTS') => {
+    const setTtsEngine = (engine: 'Echo' | 'Chatterbox' | 'Qwen3TTS') => {
         setTtsEngineState(engine);
         saveSettings({ ttsEngine: engine });
         invoke('set_tts_engine', { engine }).catch(console.error);

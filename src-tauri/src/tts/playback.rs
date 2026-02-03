@@ -1,8 +1,9 @@
 //! Playback queue and controls for TTS audio
 //!
 //! Runs a dedicated audio thread that owns rodio OutputStream/Sink and can
-//! play queued WAV chunks sequentially with gapless transitions.
+//! play queued WAV chunks or streaming sources sequentially with gapless transitions.
 
+use crate::tts::streaming_source::StreamingSource;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -29,10 +30,24 @@ struct QueuedChunk {
     speed: f32,
 }
 
-#[derive(Debug)]
+/// A streaming chunk with a channel-backed audio source.
+struct StreamingChunk {
+    session_id: String,
+    chunk_index: usize,
+    source: StreamingSource,
+    speed: f32,
+}
+
+/// Pending audio that can be either a complete WAV or a streaming source.
+enum PendingAudio {
+    Wav(Vec<u8>, f32),
+    Streaming(StreamingSource, f32),
+}
+
 enum PlaybackCmd {
     StartSession { session_id: String },
     EnqueueWav(QueuedChunk),
+    EnqueueStreaming(StreamingChunk),
     Stop,
     Pause,
     Resume,
@@ -107,6 +122,24 @@ impl PlaybackManager {
         }));
     }
 
+    /// Enqueue a streaming audio source for playback.
+    /// The source will begin playing as soon as it reaches the front of the queue,
+    /// even before generation is complete.
+    pub fn enqueue_streaming(
+        &self,
+        session_id: String,
+        chunk_index: usize,
+        source: StreamingSource,
+        speed: f32,
+    ) {
+        let _ = self.tx.send(PlaybackCmd::EnqueueStreaming(StreamingChunk {
+            session_id,
+            chunk_index,
+            source,
+            speed,
+        }));
+    }
+
     pub fn stop(&self) {
         // clear session id
         if let Ok(mut id) = self.current_session_id.lock() {
@@ -148,8 +181,8 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
     // Track which chunk is currently playing (for events)
     let mut current_playing_chunk: usize = 0;
 
-    // WAVs that arrived out of order, waiting for their turn
-    let mut pending_by_index: BTreeMap<usize, (Vec<u8>, f32)> = BTreeMap::new();
+    // Audio that arrived out of order, waiting for its turn
+    let mut pending_by_index: BTreeMap<usize, PendingAudio> = BTreeMap::new();
 
     // Create the output stream once for the lifetime of the thread
     let (_stream, stream_handle) = match OutputStream::try_default() {
@@ -232,7 +265,31 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
                     }
 
                     // Store chunk (may be out of order)
-                    pending_by_index.insert(chunk.chunk_index, (chunk.wav_data, chunk.speed));
+                    pending_by_index
+                        .insert(chunk.chunk_index, PendingAudio::Wav(chunk.wav_data, chunk.speed));
+
+                    emit_event(
+                        &app,
+                        TtsPlaybackEvent {
+                            session_id: chunk.session_id,
+                            chunk_index: chunk.chunk_index,
+                            event: "chunk_ready".to_string(),
+                            message: None,
+                        },
+                    );
+                }
+
+                PlaybackCmd::EnqueueStreaming(chunk) => {
+                    // Ignore chunks from old sessions
+                    if active_session.as_deref() != Some(chunk.session_id.as_str()) {
+                        continue;
+                    }
+
+                    // Store streaming source (may be out of order)
+                    pending_by_index.insert(
+                        chunk.chunk_index,
+                        PendingAudio::Streaming(chunk.source, chunk.speed),
+                    );
 
                     emit_event(
                         &app,
@@ -287,59 +344,74 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
         };
 
         // Append any pending chunks that are ready (in order)
-        while let Some((wav_data, speed)) = pending_by_index.remove(&next_expected_index) {
-            let cursor = Cursor::new(wav_data);
-            match Decoder::new(cursor) {
-                Ok(source) => {
-                    // Apply speed adjustment and append to sink
-                    let source = source.speed(speed.clamp(0.5, 2.0));
-                    sink.append(source);
-
-                    chunks_queued_to_sink += 1;
-                    next_expected_index += 1;
-
-                    // Update status
-                    let queued = sink.len();
-                    status.queued_count.store(queued, Ordering::SeqCst);
-
-                    // If this is the first chunk OR we ran dry (last_sink_len == 0), emit started event
-                    if last_sink_len == 0 {
-                        status.is_playing.store(true, Ordering::SeqCst);
-                        emit_event(
-                            &app,
-                            TtsPlaybackEvent {
-                                session_id: session_id.clone(),
-                                chunk_index: current_playing_chunk,
-                                event: "chunk_started".to_string(),
-                                message: None,
-                            },
-                        );
-                        // Do NOT reset current_playing_chunk here, we are continuing
-                        last_sink_len = queued;
+        while let Some(pending) = pending_by_index.remove(&next_expected_index) {
+            let append_ok = match pending {
+                PendingAudio::Wav(wav_data, speed) => {
+                    let cursor = Cursor::new(wav_data);
+                    match Decoder::new(cursor) {
+                        Ok(source) => {
+                            let source = source.speed(speed.clamp(0.5, 2.0));
+                            sink.append(source);
+                            true
+                        }
+                        Err(e) => {
+                            emit_event(
+                                &app,
+                                TtsPlaybackEvent {
+                                    session_id: session_id.clone(),
+                                    chunk_index: next_expected_index,
+                                    event: "error".to_string(),
+                                    message: Some(format!("Failed to decode WAV: {}", e)),
+                                },
+                            );
+                            false
+                        }
                     }
+                }
+                PendingAudio::Streaming(source, speed) => {
+                    // Streaming source is appended directly -- no WAV decoding needed.
+                    // Audio frames arrive progressively from the generator.
+                    if (speed - 1.0).abs() > 0.01 {
+                        sink.append(source.speed(speed.clamp(0.5, 2.0)));
+                    } else {
+                        sink.append(source);
+                    }
+                    true
+                }
+            };
 
+            chunks_queued_to_sink += 1;
+            next_expected_index += 1;
+
+            if append_ok {
+                // Update status
+                let queued = sink.len();
+                status.queued_count.store(queued, Ordering::SeqCst);
+
+                // If this is the first chunk OR we ran dry (last_sink_len == 0), emit started event
+                if last_sink_len == 0 {
+                    status.is_playing.store(true, Ordering::SeqCst);
                     emit_event(
                         &app,
                         TtsPlaybackEvent {
                             session_id: session_id.clone(),
-                            chunk_index: next_expected_index - 1,
-                            event: "chunk_queued".to_string(),
+                            chunk_index: current_playing_chunk,
+                            event: "chunk_started".to_string(),
                             message: None,
                         },
                     );
+                    last_sink_len = queued;
                 }
-                Err(e) => {
-                    emit_event(
-                        &app,
-                        TtsPlaybackEvent {
-                            session_id: session_id.clone(),
-                            chunk_index: next_expected_index,
-                            event: "error".to_string(),
-                            message: Some(format!("Failed to decode WAV: {}", e)),
-                        },
-                    );
-                    next_expected_index += 1;
-                }
+
+                emit_event(
+                    &app,
+                    TtsPlaybackEvent {
+                        session_id: session_id.clone(),
+                        chunk_index: next_expected_index - 1,
+                        event: "chunk_queued".to_string(),
+                        message: None,
+                    },
+                );
             }
         }
 
