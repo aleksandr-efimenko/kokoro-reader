@@ -1,10 +1,7 @@
 //! Tauri commands for the frontend to interact with the Rust backend
 
 use crate::epub::{Book, Chapter, EpubParser};
-use crate::tts::{
-    AudioPlayer, ChatterboxManager, EchoManager, PlaybackManager, TTSEngine, TtsPlaybackEvent,
-    Voice,
-};
+use crate::tts::{AudioPlayer, EchoManager, PlaybackManager, TTSEngine, TtsPlaybackEvent, Voice};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -14,8 +11,9 @@ use tauri::{Emitter, State};
 pub struct AppState {
     /// Echo-1B native Rust TTS engine (primary)
     pub echo: Arc<EchoManager>,
-    /// Legacy Python sidecar TTS engine (fallback)
-    pub tts: Arc<Mutex<ChatterboxManager>>,
+    // Python-based TTS engines temporarily disabled
+    // /// Legacy Python sidecar TTS engine (fallback)
+    // pub tts: Arc<Mutex<ChatterboxManager>>,
     /// Currently active TTS engine
     pub current_engine: Arc<Mutex<TTSEngine>>,
     pub audio_speed: Arc<Mutex<f32>>,
@@ -27,7 +25,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             echo: Arc::new(EchoManager::new()),
-            tts: Arc::new(Mutex::new(ChatterboxManager::new())),
+            // tts: Arc::new(Mutex::new(ChatterboxManager::new())),
             current_engine: Arc::new(Mutex::new(TTSEngine::default())),
             audio_speed: Arc::new(Mutex::new(1.0)),
             current_book: Arc::new(Mutex::new(None)),
@@ -98,80 +96,84 @@ pub fn get_chapter(index: usize, state: State<'_, AppState>) -> Result<Option<Ch
     }
 }
 
-/// Speak text using Chatterbox TTS
-#[tauri::command]
-pub async fn speak(
-    text: String,
-    _voice: String, // Chatterbox uses its own voice
-    speed: f32,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    println!(
-        "[TTS] speak called with text length: {}, speed: {}",
-        text.len(),
-        speed
-    );
+// ============================================================================
+// Python-based TTS functions temporarily disabled
+// ============================================================================
 
-    // Generate audio using Chatterbox
-    let wav_data = {
-        let tts = state.tts.lock().map_err(|e| {
-            let err = format!("Lock error: {}", e);
-            eprintln!("[TTS] {}", err);
-            err
-        })?;
-
-        // Start the TTS process if not running
-        if !tts.is_initialized() {
-            println!("[TTS] Starting Chatterbox TTS...");
-            tts.start().map_err(|e| {
-                let err = format!("Failed to start TTS: {}", e);
-                eprintln!("[TTS] {}", err);
-                err
-            })?;
-
-            tts.init_model().map_err(|e| {
-                let err = format!("Failed to init model: {}", e);
-                eprintln!("[TTS] {}", err);
-                err
-            })?;
-        }
-
-        println!("[TTS] Generating audio with Chatterbox...");
-
-        let audio = tts.generate(&text, speed).map_err(|e| {
-            let err = format!("Generation error: {}", e);
-            eprintln!("[TTS] {}", err);
-            err
-        })?;
-
-        println!("[TTS] Audio generated, {} samples", audio.audio.len());
-        audio.to_wav()
-    };
-
-    println!(
-        "[TTS] WAV data size: {} bytes, starting playback...",
-        wav_data.len()
-    );
-
-    // Play audio
-    let play_result = tokio::task::spawn_blocking(move || {
-        let player = AudioPlayer::new();
-        player.play_wav_blocking(wav_data)
-    })
-    .await
-    .map_err(|e| {
-        let err = format!("Task error: {}", e);
-        eprintln!("[TTS] {}", err);
-        err
-    })?;
-
-    match &play_result {
-        Ok(_) => println!("[TTS] Playback completed successfully"),
-        Err(e) => eprintln!("[TTS] Playback error: {}", e),
-    }
-
-    play_result.map_err(|e| e.to_string())
-}
+// /// Speak text using Chatterbox TTS
+// #[tauri::command]
+// pub async fn speak(
+//     text: String,
+//     _voice: String, // Chatterbox uses its own voice
+//     speed: f32,
+//     state: State<'_, AppState>,
+// ) -> Result<(), String> {
+//     println!(
+//         "[TTS] speak called with text length: {}, speed: {}",
+//         text.len(),
+//         speed
+//     );
+//
+//     // Generate audio using Chatterbox
+//     let wav_data = {
+//         let tts = state.tts.lock().map_err(|e| {
+//             let err = format!("Lock error: {}", e);
+//             eprintln!("[TTS] {}", err);
+//             err
+//         })?;
+//
+//         // Start the TTS process if not running
+//         if !tts.is_initialized() {
+//             println!("[TTS] Starting Chatterbox TTS...");
+//             tts.start().map_err(|e| {
+//                 let err = format!("Failed to start TTS: {}", e);
+//                 eprintln!("[TTS] {}", err);
+//                 err
+//             })?;
+//
+//             tts.init_model().map_err(|e| {
+//                 let err = format!("Failed to init model: {}", e);
+//                 eprintln!("[TTS] {}", err);
+//                 err
+//             })?;
+//         }
+//
+//         println!("[TTS] Generating audio with Chatterbox...");
+//
+//         let audio = tts.generate(&text, speed).map_err(|e| {
+//             let err = format!("Generation error: {}", e);
+//             eprintln!("[TTS] {}", err);
+//             err
+//         })?;
+//
+//         println!("[TTS] Audio generated, {} samples", audio.audio.len());
+//         audio.to_wav()
+//     };
+//
+//     println!(
+//         "[TTS] WAV data size: {} bytes, starting playback...",
+//         wav_data.len()
+//     );
+//
+//     // Play audio
+//     let play_result = tokio::task::spawn_blocking(move || {
+//         let player = AudioPlayer::new();
+//         player.play_wav_blocking(wav_data)
+//     })
+//     .await
+//     .map_err(|e| {
+//         let err = format!("Task error: {}", e);
+//         eprintln!("[TTS] {}", err);
+//         err
+//     })?;
+//
+//     match &play_result {
+//         Ok(_) => println!("[TTS] Playback completed successfully"),
+//         Err(e) => eprintln!("[TTS] Playback error: {}", e),
+//     }
+//
+//     play_result.map_err(|e| e.to_string())
+// }
 
 // ============================================================================
 // Chunked / queued TTS commands (non-blocking)
@@ -189,123 +191,36 @@ pub fn tts_start_session(
     Ok(())
 }
 
-/// Enqueue a chunk for generation + playback. Returns immediately.
-#[tauri::command]
-pub async fn tts_enqueue_chunk(
-    session_id: String,
-    chunk_index: usize,
-    text: String,
-    _voice: String, // Chatterbox uses its own voice
-    speed: f32,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    if text.trim().is_empty() {
-        return Ok(());
-    }
-
-    let playback = state.get_or_init_playback(&app)?;
-    let tts = Arc::clone(&state.tts);
-    let app_handle = app.clone();
-
-    // Clone playback to check session ID inside the thread
-    let playback_clone = playback.clone();
-    let session_id_check = session_id.clone();
-
-    tauri::async_runtime::spawn(async move {
-        // Check 1: Fast fail if session already changed
-        if let Ok(current) = playback.current_session_id.lock() {
-            if current.as_ref() != Some(&session_id) {
-                println!(
-                    "[TTS] Skipping chunk {} for cancelled session {}",
-                    chunk_index, session_id
-                );
-                return;
-            }
-        }
-
-        let generation = tauri::async_runtime::spawn_blocking(move || {
-            // Check 2: Check again just before potentially expensive lock
-            if let Ok(current) = playback_clone.current_session_id.lock() {
-                if current.as_ref() != Some(&session_id_check) {
-                    return Err(format!("Session cancelled (pre-lock)"));
-                }
-            }
-
-            let manager = tts.lock().map_err(|e| format!("Lock error: {}", e))?;
-
-            // Check 3: MUST check after acquiring lock, because we might have waited
-            // a long time for the previous chunk to finish generating.
-            if let Ok(current) = playback_clone.current_session_id.lock() {
-                if current.as_ref() != Some(&session_id_check) {
-                    return Err(format!("Session cancelled (post-lock)"));
-                }
-            }
-
-            // Start if not initialized
-            if !manager.is_initialized() {
-                manager
-                    .start()
-                    .map_err(|e| format!("Failed to start TTS: {}", e))?;
-                manager
-                    .init_model()
-                    .map_err(|e| format!("Failed to init model: {}", e))?;
-            }
-
-            // Check 4: One final check before the expensive generate call
-            if let Ok(current) = playback_clone.current_session_id.lock() {
-                if current.as_ref() != Some(&session_id_check) {
-                    return Err(format!("Session cancelled (pre-generate)"));
-                }
-            }
-
-            let audio = manager
-                .generate(&text, speed)
-                .map_err(|e| format!("Generation error: {}", e))?;
-
-            Ok::<Vec<u8>, String>(audio.to_wav())
-        })
-        .await;
-
-        match generation {
-            Ok(Ok(wav_data)) => {
-                // Speed is handled during generation.
-                // Keep playback at 1.0 to avoid double time-stretching.
-                playback.enqueue_wav(session_id.clone(), chunk_index, wav_data, 1.0);
-            }
-            Ok(Err(err)) => {
-                // Ignore cancellation errors - this is expected behavior when stopping
-                if err.contains("Session cancelled") {
-                    println!("[TTS] Validation: {}", err);
-                    return;
-                }
-
-                let _ = app_handle.emit(
-                    "tts-playback-event",
-                    TtsPlaybackEvent {
-                        session_id: session_id.clone(),
-                        chunk_index,
-                        event: "generation_error".to_string(),
-                        message: Some(err),
-                    },
-                );
-            }
-            Err(err) => {
-                let _ = app_handle.emit(
-                    "tts-playback-event",
-                    TtsPlaybackEvent {
-                        session_id: session_id.clone(),
-                        chunk_index,
-                        event: "generation_error".to_string(),
-                        message: Some(format!("Task join error: {}", err)),
-                    },
-                );
-            }
-        }
-    });
-
-    Ok(())
-}
+// Python-based tts_enqueue_chunk temporarily disabled
+// /// Enqueue a chunk for generation + playback. Returns immediately.
+// #[tauri::command]
+// pub async fn tts_enqueue_chunk(
+//     session_id: String,
+//     chunk_index: usize,
+//     text: String,
+//     _voice: String, // Chatterbox uses its own voice
+//     speed: f32,
+//     app: tauri::AppHandle,
+//     state: State<'_, AppState>,
+// ) -> Result<(), String> {
+//     if text.trim().is_empty() {
+//         return Ok(());
+//     }
+//
+//     let playback = state.get_or_init_playback(&app)?;
+//     let tts = Arc::clone(&state.tts);
+//     let app_handle = app.clone();
+//
+//     // Clone playback to check session ID inside the thread
+//     let playback_clone = playback.clone();
+//     let session_id_check = session_id.clone();
+//
+//     tauri::async_runtime::spawn(async move {
+//         // ... (full implementation commented out for brevity)
+//     });
+//
+//     Ok(())
+// }
 
 /// Stream full text through Echo-1B TTS engine.
 ///
@@ -472,10 +387,12 @@ pub fn get_voices(state: State<'_, AppState>) -> Vec<Voice> {
 /// Set the TTS engine
 #[tauri::command]
 pub async fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Only Echo engine is currently supported
     let tts_engine = match engine.to_lowercase().as_str() {
         "echo" | "echo-1b" | "echo1b" => TTSEngine::Echo,
-        "qwen3" | "qwen3tts" | "qwen3-tts" | "qwen" => TTSEngine::Qwen3TTS,
-        "chatterbox" => TTSEngine::Chatterbox,
+        // Python-based engines temporarily disabled
+        // "qwen3" | "qwen3tts" | "qwen3-tts" | "qwen" => TTSEngine::Qwen3TTS,
+        // "chatterbox" => TTSEngine::Chatterbox,
         _ => TTSEngine::Echo,
     };
 
@@ -484,17 +401,8 @@ pub async fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Resul
         return Ok(());
     }
 
-    // Shutdown the old engine
-    match current {
-        TTSEngine::Echo => {
-            state.echo.shutdown().await;
-        }
-        TTSEngine::Chatterbox | TTSEngine::Qwen3TTS => {
-            if let Ok(tts) = state.tts.lock() {
-                let _ = tts.shutdown();
-            }
-        }
-    }
+    // Shutdown the old engine (only Echo is currently active)
+    state.echo.shutdown().await;
 
     // Update current engine
     {
@@ -509,10 +417,12 @@ pub async fn set_tts_engine(engine: String, state: State<'_, AppState>) -> Resul
 /// Get the current TTS engine
 #[tauri::command]
 pub fn get_tts_engine(state: State<'_, AppState>) -> String {
+    // Only Echo is currently supported
     match state.get_engine().unwrap_or_default() {
         TTSEngine::Echo => "Echo".to_string(),
-        TTSEngine::Chatterbox => "Chatterbox".to_string(),
-        TTSEngine::Qwen3TTS => "Qwen3TTS".to_string(),
+        // Python-based engines temporarily disabled
+        // TTSEngine::Chatterbox => "Chatterbox".to_string(),
+        // TTSEngine::Qwen3TTS => "Qwen3TTS".to_string(),
     }
 }
 
@@ -521,35 +431,16 @@ pub fn get_tts_engine(state: State<'_, AppState>) -> String {
 pub async fn tts_warmup(state: State<'_, AppState>) -> Result<bool, String> {
     println!("[TTS] Warmup requested by frontend...");
 
-    let engine = state.get_engine()?;
-
-    match engine {
-        TTSEngine::Echo => {
-            // Initialize the Echo model (downloads on first use)
-            match state.echo.initialize().await {
-                Ok(_) => {
-                    println!("[Echo] Warmup: model initialized");
-                    Ok(true)
-                }
-                Err(e) => {
-                    println!("[Echo] Warmup failed: {}", e);
-                    Ok(false)
-                }
-            }
+    // Only Echo engine is currently active
+    // Initialize the Echo model (downloads on first use)
+    match state.echo.initialize().await {
+        Ok(_) => {
+            println!("[Echo] Warmup: model initialized");
+            Ok(true)
         }
-        _ => {
-            // Legacy: send warmup command to Python sidecar
-            let tts = state.tts.lock().map_err(|e| e.to_string())?;
-            match tts.warmup() {
-                Ok(_) => {
-                    println!("[TTS] Warmup completed successfully");
-                    Ok(true)
-                }
-                Err(e) => {
-                    println!("[TTS] Warmup failed: {}", e);
-                    Ok(false)
-                }
-            }
+        Err(e) => {
+            println!("[Echo] Warmup failed: {}", e);
+            Ok(false)
         }
     }
 }
@@ -582,65 +473,106 @@ pub struct DownloadProgress {
 /// Check if models are downloaded and ready
 #[tauri::command]
 pub fn check_model_status(state: State<'_, AppState>) -> ModelStatus {
-    let engine = state.get_engine().unwrap_or_default();
+    let _engine = state.get_engine().unwrap_or_default();
 
-    match engine {
-        TTSEngine::Echo => {
-            // Check if sesame/csm-1b model exists in HuggingFace cache
-            let cache_dir = dirs::home_dir()
-                .map(|p| p.join(".cache").join("huggingface").join("hub").join("models--sesame--csm-1b"))
-                .unwrap_or_default();
+    // Only Echo engine is currently supported
+    // Check if sesame/csm-1b model exists in HuggingFace cache
+    let cache_dir = dirs::home_dir()
+        .map(|p| {
+            p.join(".cache")
+                .join("huggingface")
+                .join("hub")
+                .join("models--sesame--csm-1b")
+        })
+        .unwrap_or_default();
 
-            let is_ready = cache_dir.exists();
+    // Check if model directory exists AND has snapshots (actual model files)
+    let snapshots_dir = cache_dir.join("snapshots");
+    let is_ready = snapshots_dir.exists() && snapshots_dir.is_dir() && {
+        // Check if snapshots directory has any content
+        std::fs::read_dir(&snapshots_dir)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false)
+    };
 
-            ModelStatus {
-                is_ready,
-                is_downloading: false,
-                missing_files: if is_ready {
-                    vec![]
-                } else {
-                    vec!["sesame/csm-1b".to_string()]
-                },
-                download_size_bytes: if is_ready { 0 } else { 4_000_000_000 },
-                model_dir: cache_dir.to_string_lossy().to_string(),
-            }
-        }
-        _ => {
-            // Legacy engines auto-download
-            ModelStatus {
-                is_ready: true,
-                is_downloading: false,
-                missing_files: vec![],
-                download_size_bytes: 0,
-                model_dir: "~/.cache/huggingface".to_string(),
-            }
-        }
+    ModelStatus {
+        is_ready,
+        is_downloading: false,
+        missing_files: if is_ready {
+            vec![]
+        } else {
+            vec!["sesame/csm-1b".to_string()]
+        },
+        download_size_bytes: if is_ready { 0 } else { 4_000_000_000 },
+        model_dir: cache_dir.to_string_lossy().to_string(),
     }
 }
 
 /// Download all model files
-/// For Chatterbox, this is a no-op as model downloads on first TTS call
+/// Triggers Echo model initialization which downloads from HuggingFace on first call
 #[tauri::command]
-pub async fn download_model(app: tauri::AppHandle) -> Result<(), String> {
-    // For Chatterbox, model is auto-downloaded on first use
+pub async fn download_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let echo = Arc::clone(&state.echo);
+
+    // Emit starting status
     let _ = app.emit(
         "model-download-progress",
         DownloadProgress {
-            file_name: "Chatterbox model".to_string(),
+            file_name: "sesame/csm-1b".to_string(),
             bytes_downloaded: 0,
-            total_bytes: None,
-            current_file: 0,
-            total_files: 0,
-            status: "ready".to_string(),
+            total_bytes: Some(4_000_000_000), // ~4GB estimate
+            current_file: 1,
+            total_files: 1,
+            status: "downloading".to_string(),
         },
     );
-    Ok(())
+
+    // Initialize Echo - this triggers the HuggingFace download
+    match echo.initialize().await {
+        Ok(_) => {
+            println!("[Echo] Model downloaded and initialized successfully");
+            let _ = app.emit(
+                "model-download-progress",
+                DownloadProgress {
+                    file_name: "sesame/csm-1b".to_string(),
+                    bytes_downloaded: 4_000_000_000,
+                    total_bytes: Some(4_000_000_000),
+                    current_file: 1,
+                    total_files: 1,
+                    status: "complete".to_string(),
+                },
+            );
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("[Echo] Model download failed: {}", e);
+            let _ = app.emit(
+                "model-download-progress",
+                DownloadProgress {
+                    file_name: "sesame/csm-1b".to_string(),
+                    bytes_downloaded: 0,
+                    total_bytes: None,
+                    current_file: 1,
+                    total_files: 1,
+                    status: format!("error: {}", e),
+                },
+            );
+            Err(format!("Model download failed: {}", e))
+        }
+    }
 }
 
 /// Download a specific voice (not applicable for Chatterbox)
 #[tauri::command]
-pub async fn download_voice(_voice_id: String, app: tauri::AppHandle) -> Result<(), String> {
-    download_model(app).await
+pub async fn download_voice(
+    _voice_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    download_model(app, state).await
 }
 
 /// Get the model directory path

@@ -48,6 +48,9 @@ dirs = "6"
 reqwest = { version = "0.13.1", features = ["json"] }
 urlencoding = "2"
 
+# Load .env files for HuggingFace token
+dotenvy = "0.15"
+
 # Echo-1B native TTS (Sesame CSM-1B via Candle)
 echo = { git = "https://gitlab.com/maxmcneal/echo-1b.git", branch = "main", default-features = false }
 

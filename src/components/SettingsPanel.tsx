@@ -140,6 +140,7 @@ export function SettingsPanel({
                             >
                                 Echo-1B
                             </button>
+                            {/* Python-based engines temporarily disabled
                             <button
                                 className={`theme-btn ${settings.ttsEngine === 'Chatterbox' ? 'active' : ''}`}
                                 onClick={() => settings.setTtsEngine('Chatterbox')}
@@ -154,9 +155,10 @@ export function SettingsPanel({
                             >
                                 Qwen3-TTS
                             </button>
+                            */}
                         </div>
                         <p style={{ marginTop: '0.5rem', fontSize: '0.9em', opacity: 0.8 }}>
-                            Echo-1B: Native Rust, streaming audio, GPU accelerated. No Python required.
+                            Echo-1B: Native Rust TTS with streaming audio and GPU acceleration.
                         </p>
                     </div>
 

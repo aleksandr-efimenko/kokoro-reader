@@ -33,3 +33,8 @@ bin/
 *.epub.base64
 .claude/
 =4.40.0
+
+# Environment files with secrets
+.env
+.env.local
+*.env

@@ -61,10 +61,11 @@ pub fn run() {
             commands::open_book,
             commands::get_current_book,
             commands::get_chapter,
-            commands::speak,
+            // Python-based TTS commands temporarily disabled
+            // commands::speak,
             // Chunked / queued TTS
             commands::tts_start_session,
-            commands::tts_enqueue_chunk,
+            // commands::tts_enqueue_chunk,
             commands::tts_stream_text,
             commands::tts_stop,
             commands::tts_pause,
