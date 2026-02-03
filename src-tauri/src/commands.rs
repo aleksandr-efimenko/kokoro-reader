@@ -193,9 +193,39 @@ pub async fn tts_enqueue_chunk(
     let tts = Arc::clone(&state.tts);
     let app_handle = app.clone();
 
+    // Clone playback to check session ID inside the thread
+    let playback_clone = playback.clone();
+    let session_id_check = session_id.clone();
+
     tauri::async_runtime::spawn(async move {
+        // Check 1: Fast fail if session already changed
+        if let Ok(current) = playback.current_session_id.lock() {
+            if current.as_ref() != Some(&session_id) {
+                println!(
+                    "[TTS] Skipping chunk {} for cancelled session {}",
+                    chunk_index, session_id
+                );
+                return;
+            }
+        }
+
         let generation = tauri::async_runtime::spawn_blocking(move || {
+            // Check 2: Check again just before potentially expensive lock
+            if let Ok(current) = playback_clone.current_session_id.lock() {
+                if current.as_ref() != Some(&session_id_check) {
+                    return Err(format!("Session cancelled (pre-lock)"));
+                }
+            }
+
             let manager = tts.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+            // Check 3: MUST check after acquiring lock, because we might have waited
+            // a long time for the previous chunk to finish generating.
+            if let Ok(current) = playback_clone.current_session_id.lock() {
+                if current.as_ref() != Some(&session_id_check) {
+                    return Err(format!("Session cancelled (post-lock)"));
+                }
+            }
 
             // Start if not initialized
             if !manager.is_initialized() {
@@ -205,6 +235,13 @@ pub async fn tts_enqueue_chunk(
                 manager
                     .init_model()
                     .map_err(|e| format!("Failed to init model: {}", e))?;
+            }
+
+            // Check 4: One final check before the expensive generate call
+            if let Ok(current) = playback_clone.current_session_id.lock() {
+                if current.as_ref() != Some(&session_id_check) {
+                    return Err(format!("Session cancelled (pre-generate)"));
+                }
             }
 
             let audio = manager
@@ -222,6 +259,12 @@ pub async fn tts_enqueue_chunk(
                 playback.enqueue_wav(session_id.clone(), chunk_index, wav_data, 1.0);
             }
             Ok(Err(err)) => {
+                // Ignore cancellation errors - this is expected behavior when stopping
+                if err.contains("Session cancelled") {
+                    println!("[TTS] Validation: {}", err);
+                    return;
+                }
+
                 let _ = app_handle.emit(
                     "tts-playback-event",
                     TtsPlaybackEvent {
@@ -252,6 +295,7 @@ pub async fn tts_enqueue_chunk(
 /// Stop current playback and clear the queue.
 #[tauri::command]
 pub fn tts_stop(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    println!("[TTS] Stop command received - clearing session");
     let playback = state.get_or_init_playback(&app)?;
     playback.stop();
     Ok(())

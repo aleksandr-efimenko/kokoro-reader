@@ -141,8 +141,8 @@ export function useTTS() {
         const normalized = normalizeTextForTts(text);
         if (!normalized) return;
 
-        // Use larger chunks (450 chars) for better voice consistency
-        const textChunks = splitIntoChunks(normalized, 450);
+        // Split into individual sentences for fine-grained playback
+        const textChunks = splitIntoSentences(normalized);
         if (textChunks.length === 0) return;
 
         const sessionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -245,26 +245,13 @@ export function useTTS() {
     };
 }
 
-// Helper to split text into sentence-based chunks
-function splitIntoChunks(text: string, maxLength: number): string[] {
-    const chunks: string[] = [];
+// Helper to split text into individual sentences
+function splitIntoSentences(text: string): string[] {
+    // Split on sentence boundaries, keeping the punctuation with the sentence
     const sentences = text.split(/(?<=[.!?])\s+/);
-    let currentChunk = '';
-
-    for (const sentence of sentences) {
-        if (currentChunk.length + sentence.length > maxLength && currentChunk) {
-            chunks.push(currentChunk.trim());
-            currentChunk = sentence;
-        } else {
-            currentChunk += (currentChunk ? ' ' : '') + sentence;
-        }
-    }
-
-    if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-    }
-
-    return chunks.filter(c => c.length > 0);
+    return sentences
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
 }
 
 function normalizeTextForTts(text: string): string {

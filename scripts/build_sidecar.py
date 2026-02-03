@@ -33,9 +33,10 @@ TARGETS = [
         "requirements": "requirements-chatterbox.txt",
         "hidden_imports": [
             "mlx", "mlx.core", "mlx_audio", "mlx_audio.tts",
-            "librosa", "soundfile"
+            "mlx_audio.tts.utils", "mlx_audio.tts.models",
+            "numpy", "librosa", "soundfile"
         ],
-        "collect_all": ["mlx_audio", "mlx"]
+        "collect_all": ["mlx_audio", "mlx", "numpy"]
     },
     {
         "name": "qwen3-tts",

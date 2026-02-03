@@ -681,6 +681,7 @@ export function EpubReader({
 
         // Handle text selection for TTS and Clarify
         rendition.on('selected', (cfiRange: string, contents: Contents) => {
+            console.log('[EpubReader] Selected event fired', cfiRange);
             try {
                 // epubjs provides a helper to resolve the range from the CFI.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -707,6 +708,7 @@ export function EpubReader({
                             rect.width,
                             rect.height
                         );
+                        console.log('[EpubReader] Selection processed via epubjs event', text.substring(0, 20));
                         onTextSelected?.(text, context, adjustedRect);
                         return;
                     }
@@ -714,17 +716,23 @@ export function EpubReader({
                     return;
                 }
 
-                onTextSelected?.('', '');
-            } catch {
-                onTextSelected?.('', '');
+                // onTextSelected?.('', '');
+            } catch (e) {
+                console.error('[EpubReader] Error in selected handler:', e);
+                // onTextSelected?.('', '');
             }
         });
 
         // Track the last clicked paragraph so we can read from there forward.
         rendition.on('rendered', (_section: unknown, contents: Contents) => {
             const doc = contents.document;
-            if (!doc || instrumentedDocsRef.current.has(doc)) return;
+            console.log('[EpubReader] Rendered event fired, doc:', doc ? 'exists' : 'null');
+            if (!doc || instrumentedDocsRef.current.has(doc)) {
+                console.log('[EpubReader] Document already instrumented or null, skipping');
+                return;
+            }
             instrumentedDocsRef.current.add(doc);
+            console.log('[EpubReader] Instrumenting new document, adding event listeners...');
 
             // Track the most recently rendered document as our "current page".
             lastVisibleDocRef.current = doc;
@@ -793,13 +801,19 @@ export function EpubReader({
             doc.addEventListener(
                 'click',
                 (e) => {
+                    console.log('[EpubReader] Click event received in iframe');
                     const target = e.target as HTMLElement | null;
+                    console.log('[EpubReader] Target element:', target?.tagName, target?.className);
+
                     const block = target?.closest?.('p, li, h1, h2, h3, h4, h5, h6') as HTMLElement | null;
                     if (!block) {
+                        console.log('[EpubReader] No text block found, hiding button');
                         // Clicked outside a paragraph, hide the button
                         setReadButtonPos(null);
                         return;
                     }
+
+                    console.log('[EpubReader] Found text block:', block.tagName, 'text:', block.textContent?.substring(0, 50));
 
                     // Store reference for later use regardless of indexing
                     lastBlockDocRef.current = doc;
@@ -825,6 +839,9 @@ export function EpubReader({
                     const iframe = contents.document.defaultView?.frameElement as HTMLIFrameElement;
                     const iframeRect = iframe?.getBoundingClientRect();
 
+                    console.log('[EpubReader] Block rect:', blockRect);
+                    console.log('[EpubReader] Iframe rect:', iframeRect);
+
                     if (iframeRect) {
                         // Position button above the paragraph, to the right
                         // Using absolute position relative to the window
@@ -832,9 +849,12 @@ export function EpubReader({
                         const y = iframeRect.top + blockRect.top - 35; // Above the paragraph
 
                         // Debug log
-                        console.log('[EpubReader] Read button position:', { x, y, blockRect, iframeRect });
+                        console.log('[EpubReader] Read button position calculated:', { x, y });
+                        console.log('[EpubReader] Setting readButtonPos state...');
 
                         setReadButtonPos({ x, y });
+                    } else {
+                        console.log('[EpubReader] No iframe rect available, cannot position button');
                     }
                 },
                 true,

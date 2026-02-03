@@ -10,7 +10,10 @@
     "vendor:espeak-ng:macos": "bash scripts/vendor-espeak-ng-macos.sh",
     "build:sidecar": "python3 scripts/build_sidecar.py",
     "tauri": "tauri",
-    "tauri:build": "npm run build:sidecar && tauri build"
+    "tauri:build": "npm run build:sidecar && tauri build",
+    "test": "npx playwright test",
+    "test:e2e": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -30,6 +33,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",

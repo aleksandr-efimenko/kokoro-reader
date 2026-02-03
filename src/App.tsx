@@ -75,6 +75,8 @@ function App() {
   // Open a book from file path (can be called from file picker or library)
   const openBook = useCallback(async (filePath: string, savedLocation?: string) => {
     try {
+      // Stop any existing playback immediately
+      tts.stop();
       setIsLoading(true);
 
       // Read file bytes via Tauri command

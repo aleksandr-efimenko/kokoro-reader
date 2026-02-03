@@ -112,10 +112,19 @@ impl ChatterboxTTS {
         // In development, use Python directly
         #[cfg(debug_assertions)]
         {
-            // Select script based on engine
+            // Select script based on engine & OS
             let script_name = match self.engine {
                 TTSEngine::Chatterbox => "chatterbox_tts.py",
-                TTSEngine::Qwen3TTS => "qwen3_tts.py",
+                TTSEngine::Qwen3TTS => {
+                    #[cfg(target_os = "macos")]
+                    {
+                        "qwen3_tts.py"
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        "qwen3_tts_cuda.py"
+                    }
+                }
             };
 
             let mut possible_paths = vec![
@@ -159,7 +168,16 @@ impl ChatterboxTTS {
         // Define sidecar name based on architecture and engine
         let base_name = match self.engine {
             TTSEngine::Chatterbox => "chatterbox-tts",
-            TTSEngine::Qwen3TTS => "qwen3-tts",
+            TTSEngine::Qwen3TTS => {
+                #[cfg(target_os = "macos")]
+                {
+                    "qwen3-tts"
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    "qwen3-tts-cuda"
+                }
+            }
         };
 
         #[cfg(target_arch = "aarch64")]
@@ -340,6 +358,7 @@ impl ChatterboxTTS {
             "action": "generate",
             "text": text,
             "speed": speed,
+            "temperature": 0.1,
         });
 
         self.send_command(&cmd)?;

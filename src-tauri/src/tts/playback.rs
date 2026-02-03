@@ -55,6 +55,7 @@ pub struct PlaybackStatus {
 pub struct PlaybackManager {
     tx: mpsc::Sender<PlaybackCmd>,
     status: Arc<PlaybackStatus>,
+    pub current_session_id: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl Clone for PlaybackManager {
@@ -62,6 +63,7 @@ impl Clone for PlaybackManager {
         Self {
             tx: self.tx.clone(),
             status: Arc::clone(&self.status),
+            current_session_id: Arc::clone(&self.current_session_id),
         }
     }
 }
@@ -70,14 +72,23 @@ impl PlaybackManager {
     pub fn new(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel::<PlaybackCmd>();
         let status = Arc::new(PlaybackStatus::default());
+        let current_session_id = Arc::new(std::sync::Mutex::new(None));
 
         let status_for_thread = Arc::clone(&status);
         thread::spawn(move || audio_thread_main(app, rx, status_for_thread));
 
-        Self { tx, status }
+        Self {
+            tx,
+            status,
+            current_session_id,
+        }
     }
 
     pub fn start_session(&self, session_id: String) {
+        // Update current session ID immediately so enqueuers can see it
+        if let Ok(mut id) = self.current_session_id.lock() {
+            *id = Some(session_id.clone());
+        }
         let _ = self.tx.send(PlaybackCmd::StartSession { session_id });
     }
 
@@ -97,6 +108,10 @@ impl PlaybackManager {
     }
 
     pub fn stop(&self) {
+        // clear session id
+        if let Ok(mut id) = self.current_session_id.lock() {
+            *id = None;
+        }
         let _ = self.tx.send(PlaybackCmd::Stop);
     }
 
@@ -287,19 +302,19 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
                     let queued = sink.len();
                     status.queued_count.store(queued, Ordering::SeqCst);
 
-                    // If this is the first chunk, emit started event
-                    if chunks_queued_to_sink == 1 {
+                    // If this is the first chunk OR we ran dry (last_sink_len == 0), emit started event
+                    if last_sink_len == 0 {
                         status.is_playing.store(true, Ordering::SeqCst);
                         emit_event(
                             &app,
                             TtsPlaybackEvent {
                                 session_id: session_id.clone(),
-                                chunk_index: 0,
+                                chunk_index: current_playing_chunk,
                                 event: "chunk_started".to_string(),
                                 message: None,
                             },
                         );
-                        current_playing_chunk = 0;
+                        // Do NOT reset current_playing_chunk here, we are continuing
                         last_sink_len = queued;
                     }
 
@@ -368,9 +383,9 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
             );
         }
 
-        // Detect when all playback is done
+        // Detect when all playback is done (sink became empty)
         if sink.empty() && chunks_queued_to_sink > 0 {
-            // Final chunk finished
+            // Last chunk in the sink finished
             emit_event(
                 &app,
                 TtsPlaybackEvent {
@@ -381,12 +396,20 @@ fn audio_thread_main(app: AppHandle, rx: mpsc::Receiver<PlaybackCmd>, status: Ar
                 },
             );
 
-            status.is_playing.store(false, Ordering::SeqCst);
-            status.is_paused.store(false, Ordering::SeqCst);
+            // Increment current chunk index because we just finished one
+            current_playing_chunk += 1;
+            status
+                .current_chunk
+                .store(current_playing_chunk, Ordering::SeqCst);
 
-            // Reset for next session
-            chunks_queued_to_sink = 0;
-            current_playing_chunk = 0;
+            // Do NOT reset chunks_queued_to_sink or current_playing_chunk here.
+            // We might just be waiting for the next chunk to be generated (buffer underrun).
+            // Resetting would cause the next chunk to be treated as chunk 0 again.
+
+            status.is_playing.store(false, Ordering::SeqCst);
+            // status.is_paused stays as is
+
+            // Note: If we really are done, Stop() or StartSession() will reset everything.
         } else if current_len > 0 {
             status.is_playing.store(true, Ordering::SeqCst);
         }
