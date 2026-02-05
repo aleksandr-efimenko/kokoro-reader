@@ -20,7 +20,11 @@
       "Bash(pip install:*)",
       "Bash(pip show:*)",
       "Bash(python3.10:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git -C /Users/aleksandrefimenko/Documents/GitHub/kokoro-reader log --all --oneline -- \"*.py\")",
+      "Bash(git -C /Users/aleksandrefimenko/Documents/GitHub/kokoro-reader ls-files:*)",
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:qwen.ai)"
     ]
   }
 }

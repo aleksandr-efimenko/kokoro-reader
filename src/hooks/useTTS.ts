@@ -245,19 +245,52 @@ export function useTTS() {
     };
 }
 
-// Helper to split text into individual sentences
+// Helper to split text into individual sentences/chunks
 function splitIntoSentences(text: string): string[] {
-    // Split on sentence boundaries, keeping the punctuation with the sentence
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    return sentences
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
+    const chunks: string[] = [];
+
+    // First, split by paragraph boundaries (double newlines preserved from EPUB extraction)
+    const paragraphs = text.split(/\n\n+/);
+
+    for (const para of paragraphs) {
+        const trimmed = para.trim();
+        if (!trimmed) continue;
+
+        // Check if this looks like a heading/title (short, no sentence-ending punctuation)
+        // Headings are typically: chapter numbers, titles, short lines without periods
+        const isHeading = (
+            trimmed.length < 100 &&
+            !trimmed.match(/[.!?]$/) &&
+            (
+                /^(chapter|part|section|prologue|epilogue|introduction|conclusion)\s*\d*/i.test(trimmed) ||
+                /^\d+[\s.:)-]+/.test(trimmed) ||  // "1." or "1:" or "1)" or "1 "
+                trimmed.split(/\s+/).length <= 8  // Short lines (8 words or fewer)
+            )
+        );
+
+        if (isHeading) {
+            // Keep headings as separate chunks
+            chunks.push(trimmed);
+        } else {
+            // Split paragraph into sentences
+            const sentences = trimmed.split(/(?<=[.!?])\s+/);
+            for (const sentence of sentences) {
+                const s = sentence.trim();
+                if (s.length > 0) {
+                    chunks.push(s);
+                }
+            }
+        }
+    }
+
+    return chunks;
 }
 
 function normalizeTextForTts(text: string): string {
     return text
-        .replace(/\u00A0/g, ' ')
-        .replace(/[\r\n\t]+/g, ' ')
-        .replace(/\s{2,}/g, ' ')
+        .replace(/\u00A0/g, ' ')           // Replace non-breaking spaces
+        .replace(/[\r\t]+/g, ' ')          // Replace tabs and carriage returns (but NOT newlines)
+        .replace(/\n{3,}/g, '\n\n')        // Collapse multiple newlines to double newlines
+        .replace(/[ ]{2,}/g, ' ')          // Collapse multiple spaces
         .trim();
 }

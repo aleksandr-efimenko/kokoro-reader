@@ -5,7 +5,7 @@
 use crate::tts::TTSEngine; // Import TTSEngine
 use base64::Engine;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use thiserror::Error;
@@ -254,14 +254,22 @@ impl ChatterboxTTS {
 
         // Determine how to run the sidecar
         let child = if sidecar_path.extension().map(|e| e == "py").unwrap_or(false) {
-            // Development mode: run with Python
-            let python_cmd = if Command::new("python3").arg("--version").output().is_ok() {
-                "python3"
+            // Development mode: run with Python from venv
+            // Try to find the venv Python first
+            let script_dir = sidecar_path.parent().unwrap_or(Path::new("."));
+            let venv_python = script_dir.join(".venv-qwen3").join("bin").join("python3");
+
+            let python_cmd = if venv_python.exists() {
+                eprintln!("[ChatterboxTTS] Using venv Python: {:?}", venv_python);
+                venv_python.to_string_lossy().to_string()
+            } else if Command::new("python3").arg("--version").output().is_ok() {
+                eprintln!("[ChatterboxTTS] Using system python3");
+                "python3".to_string()
             } else {
-                "python"
+                "python".to_string()
             };
 
-            Command::new(python_cmd)
+            Command::new(&python_cmd)
                 .arg(&sidecar_path)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -547,7 +555,7 @@ pub struct ChatterboxManager {
 impl ChatterboxManager {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::Chatterbox)),
+            inner: Mutex::new(ChatterboxTTS::new(TTSEngine::Qwen3TTS)),
         }
     }
 
